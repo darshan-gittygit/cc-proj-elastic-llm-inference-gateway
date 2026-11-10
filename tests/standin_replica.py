@@ -18,12 +18,18 @@ Endpoints (same shape as llama-server):
 
 Usage:
   python tests/standin_replica.py --port 18081 --startup-delay 3 --token-rate 10 --slots 2
+
+As a container (tests/standin.Dockerfile -> image llmgw-standin:test) it is a drop-in
+for the llama.cpp image: it accepts the same command line the ReplicaManager passes
+to llama-server (-np sets the slots; -m, -c, --cont-batching are accepted and ignored).
+Startup delay and token rate then come from STANDIN_STARTUP_DELAY / STANDIN_TOKEN_RATE.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import os
 import time
 import uuid
 
@@ -83,10 +89,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Stand-in llama.cpp replica (SIMULATED, test fixture only)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=18081)
-    p.add_argument("--startup-delay", type=float, default=3.0, help="seconds /health returns 503 (model 'loading')")
-    p.add_argument("--token-rate", type=float, default=10.0, help="tokens per second per request")
-    p.add_argument("--slots", type=int, default=2, help="concurrent generations (llama-server -np)")
-    a = p.parse_args()
+    p.add_argument("--startup-delay", type=float, default=float(os.environ.get("STANDIN_STARTUP_DELAY", 3.0)),
+                   help="seconds /health returns 503 (model 'loading')")
+    p.add_argument("--token-rate", type=float, default=float(os.environ.get("STANDIN_TOKEN_RATE", 10.0)),
+                   help="tokens per second per request")
+    p.add_argument("--slots", "-np", type=int, default=2, help="concurrent generations (llama-server -np)")
+    a, _ignored = p.parse_known_args()   # llama-server flags (-m, -c, --cont-batching) are ignored
     uvicorn.run(create_app(a.startup_delay, a.token_rate, a.slots), host=a.host, port=a.port, log_level="warning")
 
 

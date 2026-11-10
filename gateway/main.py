@@ -1,30 +1,30 @@
 """
 main.py - FastAPI entry point of the Elastic LLM Inference Gateway.
 
-PHASE 1 SKELETON. Implements only the single-request streaming path of
-ARCHITECTURE.md section 2:
+Streaming path of ARCHITECTURE.md section 2:
 
     curl --(SSE)--> POST /v1/chat/completions
         -> Request pushed to the central queue
         -> dispatch loop pops it only when a replica has a free slot (decision 1)
+           and asks the Router which replica gets it
         -> stream task posts to the replica with stream=true and pushes each
            chunk into Request.out; the HTTP handler yields from it (decision 2)
         -> None in Request.out marks the end; the handler then sends [DONE]
 
+Implemented so far:
+  - Phase 1: streaming path, central queue, dispatch loop
+  - Phase 2: DockerReplicaManager starts `min_replicas` containers at startup and
+             removes them at exit; Router chosen by `router:` in config.yaml
 Deliberately NOT here yet (each belongs to its own later phase):
   - scheduling policies FCFS / SPF+aging      -> Phase 3 (build_scheduler)
-  - routers, ReplicaManager / Docker API      -> Phase 2
   - session affinity                          -> Phase 4
   - HealthMonitor, retry / requeue on failure -> Phase 5
   - autoscaler, warm pool                     -> Phase 6 / 7
   - POST /admin/reload                        -> Phase 8
 
-Phase 1 bootstrap: the one replica is started outside the gateway (by
-scripts/phase1_stream_check.sh, or by hand) and passed in with
-LLMGW_STATIC_REPLICA=http://host:port. Phase 2 replaces this with ReplicaManager.
-
-Run (from the project root):
-    LLMGW_STATIC_REPLICA=http://127.0.0.1:18080 uvicorn gateway.main:app --port 8000
+Run (from the project root, on the Linux host that runs Docker):
+    uvicorn gateway.main:app --port 8000
+    LLMGW_CONFIG=/path/to/other.yaml uvicorn gateway.main:app --port 8000
 """
 from __future__ import annotations
 
@@ -42,13 +42,13 @@ from fastapi import FastAPI
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from gateway.interfaces import (Config, EventLog, Replica, ReplicaPool, ReplicaState,
-                                Request, RequestState, Scheduler)
+import gateway.router  # noqa: F401  (registers round_robin / least_busy)
+from gateway.interfaces import (Config, EventLog, Replica, ReplicaPool, Request, RequestState,
+                                Scheduler, build_router)
 from gateway.logging_conf import setup_logging
+from gateway.replica_manager import DockerReplicaManager
 
 CONFIG_PATH = os.environ.get("LLMGW_CONFIG", str(Path(__file__).with_name("config.yaml")))
-STATIC_REPLICA_ENV = "LLMGW_STATIC_REPLICA"   # Phase 1 only
-READINESS_POLL_S = 0.5                        # same poll step as check_feasibility.sh
 
 
 def estimate_prompt_tokens(messages: list[dict]) -> int:
@@ -57,8 +57,8 @@ def estimate_prompt_tokens(messages: list[dict]) -> int:
     return max(1, chars // 4)
 
 
-class Phase1FifoQueue(Scheduler):
-    """PHASE 1 PLACEHOLDER, not a scheduling policy.
+class PlaceholderFifoQueue(Scheduler):
+    """PLACEHOLDER until Phase 3, not a scheduling policy.
 
     Holds requests in arrival order so the dispatch loop already talks to the
     Scheduler interface. It is not registered in SCHEDULERS; Phase 3 replaces it
@@ -92,12 +92,14 @@ class ReplicaHTTPError(Exception):
 
 
 class Gateway:
-    """Owns the queue, the replica pool and the dispatch loop."""
+    """Owns the queue, the router, the replica pool and the dispatch loop."""
 
     def __init__(self, cfg: Config, log: EventLog) -> None:
         self.cfg, self.log = cfg, log
         self.pool = ReplicaPool()
-        self.scheduler: Scheduler = Phase1FifoQueue(log)
+        self.scheduler: Scheduler = PlaceholderFifoQueue(log)
+        self.router = build_router(cfg, log)
+        self.manager: Optional[DockerReplicaManager] = None
         self._wake = asyncio.Event()
         self._client: Optional[httpx.AsyncClient] = None
         self._background: set[asyncio.Task] = set()
@@ -107,13 +109,20 @@ class Gateway:
     async def start(self) -> None:
         # read=None: tokens can be seconds apart on a CPU-limited replica
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=None, write=10.0, pool=None))
+        self.manager = DockerReplicaManager(self.cfg, self.pool, self.log, on_change=self._wake.set,
+                                            on_removed=lambda r: self.router.on_replica_removed(r))
+        await self.manager.setup()
         self._spawn(self._dispatch_loop())
+        for _ in range(self.cfg.min_replicas):
+            await self.manager.start_replica()
 
     async def stop(self) -> None:
         tasks = list(self._background) + list(self._streams.values())
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if self.manager:
+            await self.manager.shutdown()
         if self._client:
             await self._client.aclose()
 
@@ -122,31 +131,6 @@ class Gateway:
         self._background.add(t)
         t.add_done_callback(self._background.discard)
         return t
-
-    # ---- Phase 1 bootstrap: one externally started replica ----------------
-    def add_static_replica(self, url: str) -> Replica:
-        u = httpx.URL(url)
-        r = Replica(id="r1", container_id="external", host=u.host, port=u.port or 80,
-                    state=ReplicaState.STARTING, max_slots=self.cfg.slots_per_replica)
-        self.pool.add(r)
-        self.log.health("replica registered", replica=r.id, url=r.base_url, max_slots=r.max_slots)
-        self._spawn(self._wait_until_ready(r))
-        return r
-
-    async def _wait_until_ready(self, r: Replica) -> None:
-        """One-time readiness wait (STARTING -> READY). Continuous probing is Phase 5."""
-        assert self._client
-        while True:
-            try:
-                resp = await self._client.get(f"{r.base_url}/health", timeout=2.0)
-                if resp.status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            await asyncio.sleep(READINESS_POLL_S)
-        r.state, r.ready_ts = ReplicaState.READY, time.monotonic()
-        self.log.health("replica ready", replica=r.id, waited_s=f"{r.ready_ts - r.created_ts:.2f}")
-        self._wake.set()
 
     # ---- request path ----------------------------------------------------
     def submit(self, req: Request) -> None:
@@ -167,16 +151,21 @@ class Gateway:
                 req = self.scheduler.pop()
                 if req is None:
                     break
-                replica = self.pool.routable()[0]   # placeholder: routers arrive in Phase 2
-                self._dispatch(req, replica)
+                # load snapshot BEFORE the decision, so the log shows why it was made
+                loads = ",".join(f"{r.id}:{r.in_flight}/{r.max_slots}" for r in self.pool.ready())
+                replica = self.router.choose(req, self.pool)
+                if replica is None:
+                    self.scheduler.requeue_front(req)
+                    break
+                self._dispatch(req, replica, loads)
 
-    def _dispatch(self, req: Request, replica: Replica) -> None:
+    def _dispatch(self, req: Request, replica: Replica, loads: str) -> None:
         replica.in_flight += 1
         req.attempts += 1
         req.replica_id = replica.id
         req.state = RequestState.RUNNING
-        self.log.route("dispatch", req=req.id, replica=replica.id,
-                       in_flight=replica.in_flight, free_slots=replica.free_slots)
+        self.log.route("dispatch", req=req.id, replica=replica.id, policy=self.cfg.router,
+                       loads_before=loads, in_flight=replica.in_flight)
         t = asyncio.create_task(self._stream(req, replica))
         self._streams[req.id] = t
 
@@ -204,6 +193,7 @@ class Gateway:
                             ttft = time.monotonic() - t0
                     await req.out.put(f"data: {data}\n\n")
             req.state = RequestState.DONE
+            self.router.on_complete(req, replica)
             self.log.route("complete", req=req.id, replica=replica.id, tokens=req.tokens_emitted,
                            ttft_s=f"{ttft:.3f}" if ttft is not None else "na",
                            total_s=f"{time.monotonic() - t0:.3f}")
@@ -215,7 +205,7 @@ class Gateway:
         except (httpx.HTTPError, ReplicaHTTPError) as e:
             # No retry before Phase 5: report the error to the client and end the stream.
             req.state = RequestState.FAILED
-            self.log.route("stream failed, no retry in phase 1", req=req.id, replica=replica.id,
+            self.log.route("stream failed, no retry before phase 5", req=req.id, replica=replica.id,
                            tokens=req.tokens_emitted, error=type(e).__name__)
             err = {"error": {"message": f"replica {replica.id} failed: {e}", "type": "replica_error"}}
             await req.out.put(f"data: {json.dumps(err)}\n\n")
@@ -242,12 +232,12 @@ async def lifespan(app: FastAPI):
     setup_logging()
     cfg = Config.load(CONFIG_PATH)
     log = EventLog()
-    url = os.environ.get(STATIC_REPLICA_ENV)
-    if not url:
-        raise RuntimeError(f"Phase 1 needs {STATIC_REPLICA_ENV}=http://host:port of a running replica")
     gw = Gateway(cfg, log)
-    await gw.start()
-    gw.add_static_replica(url)
+    try:
+        await gw.start()
+    except BaseException:
+        await gw.stop()          # never leave containers behind on a failed start
+        raise
     app.state.gw = gw
     try:
         yield

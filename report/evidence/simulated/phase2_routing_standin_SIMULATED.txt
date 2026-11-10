@@ -1,0 +1,116 @@
+# SIMULATED RESULT (stand-in replica containers, no model; timings are NOT model performance)
+# Phase 2 check: 3 replicas via Docker Engine API + round_robin / least_busy routing, 10 requests each
+# Run: 2026-11-10T12:10:15+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | cores: 16 | dir: /home/darshan/llmgw-wsl-test-copy
+# Requests: 10 per policy, one every 0.4 s, alternating max_tokens=40 (even) / 4 (odd)
+
+################ router: round_robin ################
+== containers while running (docker inspect) ==
+/llmgw-replica-r1 NanoCpus=1000000000 Memory=1073741824 Network=llmgw-net Image=llmgw-standin:test
+/llmgw-replica-r2 NanoCpus=1000000000 Memory=1073741824 Network=llmgw-net Image=llmgw-standin:test
+/llmgw-replica-r3 NanoCpus=1000000000 Memory=1073741824 Network=llmgw-net Image=llmgw-standin:test
+== gateway decision log ==
+2026-11-10 12:10:16.656 INFO gateway [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+2026-11-10 12:10:16.925 INFO gateway [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+2026-11-10 12:10:17.177 INFO gateway [SCALE] replica started replica=r3 container=llmgw-replica-r3 ip=172.18.0.4 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+2026-11-10 12:10:19.461 INFO gateway [HEALTH] replica ready replica=r2 state=ready load_s=2.80
+2026-11-10 12:10:19.715 INFO gateway [HEALTH] replica ready replica=r3 state=ready load_s=2.79
+2026-11-10 12:10:19.736 INFO gateway [HEALTH] replica ready replica=r1 state=ready load_s=3.44
+2026-11-10 12:10:20.776 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=round_robin loads_before=r1:0/2,r2:0/2,r3:0/2 in_flight=1
+2026-11-10 12:10:21.173 INFO gateway [ROUTE] dispatch req=2 replica=r2 policy=round_robin loads_before=r1:1/2,r2:0/2,r3:0/2 in_flight=1
+2026-11-10 12:10:21.393 INFO gateway [ROUTE] complete req=2 replica=r2 tokens=4 ttft_s=0.066 total_s=0.220
+2026-11-10 12:10:21.575 INFO gateway [ROUTE] dispatch req=3 replica=r3 policy=round_robin loads_before=r1:1/2,r2:0/2,r3:0/2 in_flight=1
+2026-11-10 12:10:21.977 INFO gateway [ROUTE] dispatch req=4 replica=r1 policy=round_robin loads_before=r1:1/2,r2:0/2,r3:1/2 in_flight=2
+2026-11-10 12:10:22.186 INFO gateway [ROUTE] complete req=4 replica=r1 tokens=4 ttft_s=0.055 total_s=0.209
+2026-11-10 12:10:22.385 INFO gateway [ROUTE] dispatch req=5 replica=r2 policy=round_robin loads_before=r1:1/2,r2:0/2,r3:1/2 in_flight=1
+2026-11-10 12:10:22.786 INFO gateway [ROUTE] dispatch req=6 replica=r3 policy=round_robin loads_before=r1:1/2,r2:1/2,r3:1/2 in_flight=2
+2026-11-10 12:10:22.832 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=40 ttft_s=0.072 total_s=2.056
+2026-11-10 12:10:22.995 INFO gateway [ROUTE] complete req=6 replica=r3 tokens=4 ttft_s=0.054 total_s=0.209
+2026-11-10 12:10:23.191 INFO gateway [ROUTE] dispatch req=7 replica=r1 policy=round_robin loads_before=r1:0/2,r2:1/2,r3:1/2 in_flight=1
+2026-11-10 12:10:23.593 INFO gateway [ROUTE] dispatch req=8 replica=r2 policy=round_robin loads_before=r1:1/2,r2:1/2,r3:1/2 in_flight=2
+2026-11-10 12:10:23.628 INFO gateway [ROUTE] complete req=3 replica=r3 tokens=40 ttft_s=0.065 total_s=2.053
+2026-11-10 12:10:23.801 INFO gateway [ROUTE] complete req=8 replica=r2 tokens=4 ttft_s=0.054 total_s=0.209
+2026-11-10 12:10:23.998 INFO gateway [ROUTE] dispatch req=9 replica=r3 policy=round_robin loads_before=r1:1/2,r2:1/2,r3:0/2 in_flight=1
+2026-11-10 12:10:24.401 INFO gateway [ROUTE] dispatch req=10 replica=r1 policy=round_robin loads_before=r1:1/2,r2:1/2,r3:1/2 in_flight=2
+2026-11-10 12:10:24.427 INFO gateway [ROUTE] complete req=5 replica=r2 tokens=40 ttft_s=0.055 total_s=2.042
+2026-11-10 12:10:24.613 INFO gateway [ROUTE] complete req=10 replica=r1 tokens=4 ttft_s=0.056 total_s=0.211
+2026-11-10 12:10:25.236 INFO gateway [ROUTE] complete req=7 replica=r1 tokens=40 ttft_s=0.055 total_s=2.045
+2026-11-10 12:10:26.036 INFO gateway [ROUTE] complete req=9 replica=r3 tokens=40 ttft_s=0.054 total_s=2.039
+2026-11-10 12:10:26.914 INFO gateway [SCALE] replica removed replica=r1 reason=gateway_shutdown
+2026-11-10 12:10:27.207 INFO gateway [SCALE] replica removed replica=r2 reason=gateway_shutdown
+2026-11-10 12:10:27.524 INFO gateway [SCALE] replica removed replica=r3 reason=gateway_shutdown
+== replica chosen per request (from [ROUTE] dispatch) ==
+req=1 -> r1   (loads before: r1:0/2,r2:0/2,r3:0/2)
+req=2 -> r2   (loads before: r1:1/2,r2:0/2,r3:0/2)
+req=3 -> r3   (loads before: r1:1/2,r2:0/2,r3:0/2)
+req=4 -> r1   (loads before: r1:1/2,r2:0/2,r3:1/2)
+req=5 -> r2   (loads before: r1:1/2,r2:0/2,r3:1/2)
+req=6 -> r3   (loads before: r1:1/2,r2:1/2,r3:1/2)
+req=7 -> r1   (loads before: r1:0/2,r2:1/2,r3:1/2)
+req=8 -> r2   (loads before: r1:1/2,r2:1/2,r3:1/2)
+req=9 -> r3   (loads before: r1:1/2,r2:1/2,r3:0/2)
+req=10 -> r1   (loads before: r1:1/2,r2:1/2,r3:1/2)
+== checks ==
+PASS: 3 replicas reached READY
+PASS: 3 containers running during the test
+PASS: every container has NanoCpus=1000000000
+PASS: every container has Memory=1073741824
+PASS: 10 dispatch decisions logged with policy=round_robin
+PASS: 10 requests completed ([ROUTE] complete)
+PASS: all 10 clients got [DONE] and no error
+PASS: all 3 containers removed after gateway exit
+
+################ router: least_busy ################
+== containers while running (docker inspect) ==
+/llmgw-replica-r1 NanoCpus=1000000000 Memory=1073741824 Network=llmgw-net Image=llmgw-standin:test
+/llmgw-replica-r2 NanoCpus=1000000000 Memory=1073741824 Network=llmgw-net Image=llmgw-standin:test
+/llmgw-replica-r3 NanoCpus=1000000000 Memory=1073741824 Network=llmgw-net Image=llmgw-standin:test
+== gateway decision log ==
+2026-11-10 12:10:28.496 INFO gateway [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+2026-11-10 12:10:28.737 INFO gateway [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+2026-11-10 12:10:29.037 INFO gateway [SCALE] replica started replica=r3 container=llmgw-replica-r3 ip=172.18.0.4 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+2026-11-10 12:10:31.067 INFO gateway [HEALTH] replica ready replica=r1 state=ready load_s=2.83
+2026-11-10 12:10:31.273 INFO gateway [HEALTH] replica ready replica=r2 state=ready load_s=2.78
+2026-11-10 12:10:31.578 INFO gateway [HEALTH] replica ready replica=r3 state=ready load_s=2.84
+2026-11-10 12:10:32.604 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=least_busy loads_before=r1:0/2,r2:0/2,r3:0/2 in_flight=1
+2026-11-10 12:10:33.009 INFO gateway [ROUTE] dispatch req=2 replica=r2 policy=least_busy loads_before=r1:1/2,r2:0/2,r3:0/2 in_flight=1
+2026-11-10 12:10:33.226 INFO gateway [ROUTE] complete req=2 replica=r2 tokens=4 ttft_s=0.063 total_s=0.217
+2026-11-10 12:10:33.412 INFO gateway [ROUTE] dispatch req=3 replica=r2 policy=least_busy loads_before=r1:1/2,r2:0/2,r3:0/2 in_flight=1
+2026-11-10 12:10:33.815 INFO gateway [ROUTE] dispatch req=4 replica=r3 policy=least_busy loads_before=r1:1/2,r2:1/2,r3:0/2 in_flight=1
+2026-11-10 12:10:34.035 INFO gateway [ROUTE] complete req=4 replica=r3 tokens=4 ttft_s=0.066 total_s=0.220
+2026-11-10 12:10:34.218 INFO gateway [ROUTE] dispatch req=5 replica=r3 policy=least_busy loads_before=r1:1/2,r2:1/2,r3:0/2 in_flight=1
+2026-11-10 12:10:34.622 INFO gateway [ROUTE] dispatch req=6 replica=r1 policy=least_busy loads_before=r1:1/2,r2:1/2,r3:1/2 in_flight=2
+2026-11-10 12:10:34.651 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=40 ttft_s=0.064 total_s=2.047
+2026-11-10 12:10:34.829 INFO gateway [ROUTE] complete req=6 replica=r1 tokens=4 ttft_s=0.054 total_s=0.207
+2026-11-10 12:10:35.030 INFO gateway [ROUTE] dispatch req=7 replica=r1 policy=least_busy loads_before=r1:0/2,r2:1/2,r3:1/2 in_flight=1
+2026-11-10 12:10:35.434 INFO gateway [ROUTE] dispatch req=8 replica=r1 policy=least_busy loads_before=r1:1/2,r2:1/2,r3:1/2 in_flight=2
+2026-11-10 12:10:35.453 INFO gateway [ROUTE] complete req=3 replica=r2 tokens=40 ttft_s=0.053 total_s=2.040
+2026-11-10 12:10:35.647 INFO gateway [ROUTE] complete req=8 replica=r1 tokens=4 ttft_s=0.057 total_s=0.212
+2026-11-10 12:10:35.840 INFO gateway [ROUTE] dispatch req=9 replica=r2 policy=least_busy loads_before=r1:1/2,r2:0/2,r3:1/2 in_flight=1
+2026-11-10 12:10:36.240 INFO gateway [ROUTE] dispatch req=10 replica=r1 policy=least_busy loads_before=r1:1/2,r2:1/2,r3:1/2 in_flight=2
+2026-11-10 12:10:36.257 INFO gateway [ROUTE] complete req=5 replica=r3 tokens=40 ttft_s=0.054 total_s=2.039
+2026-11-10 12:10:36.452 INFO gateway [ROUTE] complete req=10 replica=r1 tokens=4 ttft_s=0.055 total_s=0.211
+2026-11-10 12:10:37.074 INFO gateway [ROUTE] complete req=7 replica=r1 tokens=40 ttft_s=0.054 total_s=2.044
+2026-11-10 12:10:37.885 INFO gateway [ROUTE] complete req=9 replica=r2 tokens=40 ttft_s=0.056 total_s=2.044
+2026-11-10 12:10:38.770 INFO gateway [SCALE] replica removed replica=r1 reason=gateway_shutdown
+2026-11-10 12:10:39.057 INFO gateway [SCALE] replica removed replica=r2 reason=gateway_shutdown
+2026-11-10 12:10:39.349 INFO gateway [SCALE] replica removed replica=r3 reason=gateway_shutdown
+== replica chosen per request (from [ROUTE] dispatch) ==
+req=1 -> r1   (loads before: r1:0/2,r2:0/2,r3:0/2)
+req=2 -> r2   (loads before: r1:1/2,r2:0/2,r3:0/2)
+req=3 -> r2   (loads before: r1:1/2,r2:0/2,r3:0/2)
+req=4 -> r3   (loads before: r1:1/2,r2:1/2,r3:0/2)
+req=5 -> r3   (loads before: r1:1/2,r2:1/2,r3:0/2)
+req=6 -> r1   (loads before: r1:1/2,r2:1/2,r3:1/2)
+req=7 -> r1   (loads before: r1:0/2,r2:1/2,r3:1/2)
+req=8 -> r1   (loads before: r1:1/2,r2:1/2,r3:1/2)
+req=9 -> r2   (loads before: r1:1/2,r2:0/2,r3:1/2)
+req=10 -> r1   (loads before: r1:1/2,r2:1/2,r3:1/2)
+== checks ==
+PASS: 3 replicas reached READY
+PASS: 3 containers running during the test
+PASS: every container has NanoCpus=1000000000
+PASS: every container has Memory=1073741824
+PASS: 10 dispatch decisions logged with policy=least_busy
+PASS: 10 requests completed ([ROUTE] complete)
+PASS: all 10 clients got [DONE] and no error
+PASS: all 3 containers removed after gateway exit
