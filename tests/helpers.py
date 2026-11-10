@@ -91,10 +91,13 @@ class GatewayProc:
         self.proc.wait(30)
 
 
-def stream_request(url: str, max_tokens: int, content: str = "hello") -> tuple[list[str], list[float]]:
+def stream_request(url: str, max_tokens: int, content: str = "hello",
+                   session_id: str | None = None) -> tuple[list[str], list[float]]:
     """Returns the SSE data payloads and the arrival time of each one."""
     events, times = [], []
     body = {"messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "stream": True}
+    if session_id is not None:
+        body["session_id"] = session_id
     with httpx.stream("POST", url, json=body, timeout=60) as r:
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/event-stream")

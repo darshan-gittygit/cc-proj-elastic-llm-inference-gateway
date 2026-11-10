@@ -2,11 +2,11 @@
 router.py - Router implementations (owner C). Pure decision logic, no I/O.
 
 Phase 2: round_robin and least_busy.
-session_affinity is Phase 4 and is not registered yet, so `router: session_affinity`
-in config.yaml fails at startup with a clear "unknown router" error.
+Phase 4: session_affinity (ARCHITECTURE.md decision 5).
 
 The dispatch loop logs every decision ([ROUTE] dispatch ... policy=... loads=...),
-so routers themselves stay free of side effects.
+so routers themselves stay free of side effects. session_affinity exposes the kind
+of its last decision in `last_decision`, which the dispatch loop adds to that line.
 """
 from __future__ import annotations
 
@@ -49,6 +49,48 @@ class LeastBusyRouter(Router):
         return best
 
 
+class SessionAffinityRouter(Router):
+    """Keeps session_id -> replica_id. A session's requests go to its replica while that
+    replica is routable (READY with a free slot). Otherwise (dead, draining, full, removed)
+    the request falls back to least_busy and the session is re-mapped; the gateway replays
+    the full history, so correctness never depends on the old replica's cache.
+    Requests without a session_id are routed least_busy and not mapped.
+
+    last_decision: "no_session" | "new" | "hit" | "remap:<old>-<why>"  (why = full | draining |
+    dead | starting | warm | removed).
+    A mapping to a removed replica is kept until the session's next request, so that request
+    is logged as "remap:<old>-removed" (replica ids are never reused)."""
+
+    def __init__(self) -> None:
+        self._map: dict[str, str] = {}
+        self._fallback = LeastBusyRouter()
+        self.last_decision: Optional[str] = None
+
+    def choose(self, req: Request, pool: ReplicaPool) -> Optional[Replica]:
+        sid = req.session_id
+        if sid is None:
+            self.last_decision = "no_session"
+            return self._fallback.choose(req, pool)
+        old_id = self._map.get(sid)
+        old = pool.get(old_id) if old_id else None
+        if old is not None and old.routable:
+            self.last_decision = "hit"
+            return old
+        r = self._fallback.choose(req, pool)
+        if r is None:
+            return None
+        if old_id is None:
+            self.last_decision = "new"
+        else:
+            why = "removed" if old is None else ("full" if old.free_slots == 0 else old.state.value)
+            self.last_decision = f"remap:{old_id}-{why}"
+        self._map[sid] = r.id
+        return r
+
+    def mapping(self) -> dict[str, str]:
+        return dict(self._map)
+
+
 @register_router("round_robin")
 def _make_round_robin(cfg: Config, log: EventLog) -> Router:
     return RoundRobinRouter()
@@ -57,3 +99,8 @@ def _make_round_robin(cfg: Config, log: EventLog) -> Router:
 @register_router("least_busy")
 def _make_least_busy(cfg: Config, log: EventLog) -> Router:
     return LeastBusyRouter()
+
+
+@register_router("session_affinity")
+def _make_session_affinity(cfg: Config, log: EventLog) -> Router:
+    return SessionAffinityRouter()

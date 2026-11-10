@@ -16,8 +16,10 @@ Implemented so far:
   - Phase 2: DockerReplicaManager starts `min_replicas` containers at startup and
              removes them at exit; Router chosen by `router:` in config.yaml
   - Phase 3: Scheduler chosen by `scheduler:` in config.yaml (fcfs | spf_aging)
+  - Phase 4: optional "session_id" in the request body. The gateway keeps each session's
+             full history (clients send only the new message) and `router: session_affinity`
+             keeps a session on one replica (decision 5)
 Deliberately NOT here yet (each belongs to its own later phase):
-  - session affinity                          -> Phase 4
   - HealthMonitor, retry / requeue on failure -> Phase 5
   - autoscaler, warm pool                     -> Phase 6 / 7
   - POST /admin/reload                        -> Phase 8
@@ -74,6 +76,8 @@ class Gateway:
         self._client: Optional[httpx.AsyncClient] = None
         self._background: set[asyncio.Task] = set()
         self._streams: dict[int, asyncio.Task] = {}
+        # Decision 5: full conversation per session; clients send only the new message(s).
+        self.sessions: dict[str, list[dict]] = {}
 
     # ---- lifecycle -------------------------------------------------------
     async def start(self) -> None:
@@ -103,6 +107,13 @@ class Gateway:
         return t
 
     # ---- request path ----------------------------------------------------
+    def new_request(self, messages: list[dict], max_tokens: int, session_id: Optional[str]) -> Request:
+        """With a session_id, the stored history is prepended, so every replica receives the
+        whole conversation (correctness never depends on one replica's cache)."""
+        full = self.sessions.get(session_id, []) + messages if session_id else messages
+        return Request(messages=full, prompt_tokens=estimate_prompt_tokens(full),
+                       max_tokens=max_tokens, session_id=session_id)
+
     def submit(self, req: Request) -> None:
         self.scheduler.push(req)
         self._wake.set()
@@ -140,8 +151,13 @@ class Gateway:
         req.attempts += 1
         req.replica_id = replica.id
         req.state = RequestState.RUNNING
+        extra = {}
+        if req.session_id is not None:
+            extra["session"] = req.session_id
+        if getattr(self.router, "last_decision", None):
+            extra["affinity"] = self.router.last_decision
         self.log.route("dispatch", req=req.id, replica=replica.id, policy=self.cfg.router,
-                       loads_before=loads, in_flight=replica.in_flight)
+                       loads_before=loads, in_flight=replica.in_flight, **extra)
         t = asyncio.create_task(self._stream(req, replica))
         self._streams[req.id] = t
 
@@ -151,6 +167,7 @@ class Gateway:
                    "temperature": self.cfg.default_temperature, "stream": True}
         t0 = time.monotonic()
         ttft: Optional[float] = None
+        reply: list[str] = []
         try:
             async with self._client.stream("POST", f"{replica.base_url}/v1/chat/completions",
                                            json=payload) as resp:
@@ -163,12 +180,16 @@ class Gateway:
                     data = line[5:].strip()
                     if data == "[DONE]":
                         break
-                    if _has_content(data):
+                    content = _content_of(data)
+                    if content:
                         req.tokens_emitted += 1
+                        reply.append(content)
                         if ttft is None:
                             ttft = time.monotonic() - t0
                     await req.out.put(f"data: {data}\n\n")
             req.state = RequestState.DONE
+            if req.session_id is not None:     # only a completed turn enters the history
+                self.sessions[req.session_id] = req.messages + [{"role": "assistant", "content": "".join(reply)}]
             self.router.on_complete(req, replica)
             self.log.route("complete", req=req.id, replica=replica.id, tokens=req.tokens_emitted,
                            ttft_s=f"{ttft:.3f}" if ttft is not None else "na",
@@ -192,12 +213,14 @@ class Gateway:
             self._wake.set()
 
 
-def _has_content(data: str) -> bool:
+def _content_of(data: str) -> str:
     try:
         choices = json.loads(data).get("choices") or []
-        return bool(choices and (choices[0].get("delta") or {}).get("content"))
+        if not choices:
+            return ""
+        return (choices[0].get("delta") or {}).get("content") or ""
     except (ValueError, AttributeError):
-        return False
+        return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -235,10 +258,12 @@ async def chat_completions(http_req: HTTPRequest):
         return JSONResponse({"error": "'messages' must be a non-empty list"}, status_code=400)
     if body.get("stream") is False:
         return JSONResponse({"error": "this gateway only streams; send stream=true"}, status_code=400)
+    session_id = body.get("session_id")
+    if session_id is not None and (not isinstance(session_id, str) or not session_id):
+        return JSONResponse({"error": "'session_id' must be a non-empty string"}, status_code=400)
 
     gw: Gateway = http_req.app.state.gw
-    req = Request(messages=messages, prompt_tokens=estimate_prompt_tokens(messages),
-                  max_tokens=int(body.get("max_tokens", 256)))
+    req = gw.new_request(messages, int(body.get("max_tokens", 256)), session_id)
     gw.submit(req)
 
     async def sse():

@@ -10,6 +10,7 @@ To make that impossible to miss, every response is marked:
   - streamed chunks carry  "model": "standin-simulated"
   - generated text is      "sim0 sim1 sim2 ..."
   - every response has the header  X-Replica-Kind: standin-simulated
+The first chunk also carries "standin_prompt_messages": <number of messages received>.
 
 Endpoints (same shape as llama-server):
   GET  /health                -> 503 {"error": {...Loading model}} during the startup delay, then 200 {"status": "ok"}
@@ -63,17 +64,19 @@ def create_app(startup_delay: float, token_rate: float, slots: int) -> FastAPI:
                                 headers=KIND_HEADER)
         body = await req.json()
         max_tokens = int(body.get("max_tokens", 16))
+        n_messages = len(body.get("messages") or [])
         cid = f"chatcmpl-sim-{uuid.uuid4().hex[:12]}"
 
-        def chunk(delta: dict, finish: str | None = None) -> str:
+        def chunk(delta: dict, finish: str | None = None, **extra) -> str:
             return "data: " + json.dumps({
                 "choices": [{"finish_reason": finish, "index": 0, "delta": delta}],
                 "created": int(time.time()), "id": cid, "model": MODEL_NAME,
-                "object": "chat.completion.chunk"}) + "\n\n"
+                "object": "chat.completion.chunk", **extra}) + "\n\n"
 
         async def stream():
             async with sem:                      # extra requests wait here, like llama-server slots
-                yield chunk({"role": "assistant", "content": None})
+                # standin_prompt_messages: lets tests check the history the gateway sent
+                yield chunk({"role": "assistant", "content": None}, standin_prompt_messages=n_messages)
                 for i in range(max_tokens):
                     await asyncio.sleep(1.0 / token_rate)
                     yield chunk({"content": f"sim{i} "})

@@ -1,0 +1,84 @@
+# SIMULATED RESULT (stand-in replica containers, no model; timings are NOT model performance)
+# Phase 4 / demo 2: session affinity vs round robin, 2 replicas, 3 conversations x 5 turns each
+# Run: 2026-11-10T13:21:52+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# max_tokens per turn: 12. TTFT = gateway-measured time to first token (monotonic).
+
+################ run affinity (router: session_affinity) ################
+== conversation affinity-c1 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    3      r1            new   0.056       -        -    1  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     2    4      r1            hit   0.055       -        -    3  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     3    5      r1            hit   0.053       -        -    5  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     4    6      r1            hit   0.056       -        -    7  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     5    7      r1            hit   0.056       -        -    9  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+== conversation affinity-c2 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    8      r1            new   0.057       -        -    1  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     2    9      r1            hit   0.054       -        -    3  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     3   10      r1            hit   0.055       -        -    5  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     4   11      r1            hit   0.055       -        -    7  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     5   12      r1            hit   0.056       -        -    9  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+== conversation affinity-c3 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1   13      r1            new   0.055       -        -    1  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     2   14      r1            hit   0.057       -        -    3  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     3   15      r1            hit   0.054       -        -    5  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     4   16      r1            hit   0.055       -        -    7  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     5   17      r1            hit   0.054       -        -    9  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+== checks ==
+PASS: affinity-c1: 5 turns dispatched
+PASS: affinity-c1: all 5 turns on the same replica (r1)
+PASS: affinity-c1: affinity decisions new, hit x4
+PASS: affinity-c1: history replayed (stand-in got 1,3,5,7,9 messages)
+PASS: affinity-c2: 5 turns dispatched
+PASS: affinity-c2: all 5 turns on the same replica (r1)
+PASS: affinity-c2: affinity decisions new, hit x4
+PASS: affinity-c2: history replayed (stand-in got 1,3,5,7,9 messages)
+PASS: affinity-c3: 5 turns dispatched
+PASS: affinity-c3: all 5 turns on the same replica (r1)
+PASS: affinity-c3: affinity decisions new, hit x4
+PASS: affinity-c3: history replayed (stand-in got 1,3,5,7,9 messages)
+PASS: all requests got [DONE] and no error
+PASS: replica containers removed after gateway exit
+
+################ run baseline (router: round_robin) ################
+== conversation baseline-c1 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    3      r1              -   0.056       -        -    1  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     2    4      r2              -   0.055       -        -    3  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     3    5      r1              -   0.054       -        -    5  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     4    6      r2              -   0.056       -        -    7  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     5    7      r1              -   0.054       -        -    9  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+== conversation baseline-c2 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    8      r2              -   0.056       -        -    1  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     2    9      r1              -   0.054       -        -    3  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     3   10      r2              -   0.055       -        -    5  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     4   11      r1              -   0.057       -        -    7  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     5   12      r2              -   0.055       -        -    9  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+== conversation baseline-c3 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1   13      r1              -   0.054       -        -    1  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     2   14      r2              -   0.055       -        -    3  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     3   15      r1              -   0.056       -        -    5  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     4   16      r2              -   0.056       -        -    7  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+     5   17      r1              -   0.055       -        -    9  'sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 '
+== checks ==
+PASS: baseline-c1: 5 turns dispatched
+PASS: baseline-c1: turn 2 went to a different replica than turn 1
+PASS: baseline-c1: history replayed (stand-in got 1,3,5,7,9 messages)
+PASS: baseline-c2: 5 turns dispatched
+PASS: baseline-c2: turn 2 went to a different replica than turn 1
+PASS: baseline-c2: history replayed (stand-in got 1,3,5,7,9 messages)
+PASS: baseline-c3: 5 turns dispatched
+PASS: baseline-c3: turn 2 went to a different replica than turn 1
+PASS: baseline-c3: history replayed (stand-in got 1,3,5,7,9 messages)
+PASS: all requests got [DONE] and no error
+PASS: replica containers removed after gateway exit
+
+################ turn-2 TTFT: with vs without affinity ################
+                              c1      c2      c3    mean   cache_n (turn 2)
+        session_affinity   0.055   0.054   0.057   0.055   [None, None, None]
+      round_robin (none)   0.055   0.054   0.055   0.055   [None, None, None]
+  difference of means (round_robin - affinity): -0.001 s
+  (measured, not assumed: no PASS/FAIL on which is faster)

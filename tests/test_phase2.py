@@ -81,13 +81,14 @@ def test_routers_return_none_when_nothing_routable():
     assert RoundRobinRouter().choose(req(), ReplicaPool()) is None
 
 
-def test_registry_has_only_phase2_routers():
-    assert set(ROUTERS) == {"round_robin", "least_busy"}
+def test_registry_has_phase2_routers():
+    # Phase 4 adds session_affinity (tested in test_phase4.py)
+    assert {"round_robin", "least_busy"} <= set(ROUTERS)
     log = EventLog("test")
     assert isinstance(build_router(Config(router="round_robin"), log), RoundRobinRouter)
     assert isinstance(build_router(Config(router="least_busy"), log), LeastBusyRouter)
-    with pytest.raises(ValueError, match="unknown router 'session_affinity'"):   # Phase 4
-        build_router(Config(router="session_affinity"), log)
+    with pytest.raises(ValueError, match="unknown router 'random'"):
+        build_router(Config(router="random"), log)
 
 
 # --------------------------------------------------------------------------- #
