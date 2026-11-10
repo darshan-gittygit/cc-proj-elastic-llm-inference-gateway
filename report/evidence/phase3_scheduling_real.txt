@@ -1,0 +1,301 @@
+# REAL MODEL RESULT (llama.cpp container, real model)
+# Phase 3 / demo 1: scheduling (fcfs vs spf_aging, aging vs no aging) through the gateway
+# Run: 2026-11-10T12:36:11+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# 1 replica x 1 slot. Blocker max_tokens=16, others max_tokens=4. Times below are monotonic (log mono=).
+
+################ run A_fcfs ################
+policy=fcfs aging_alpha=5.0
+== service order (from [SCHED] selected) ==
+  blocker -> L -> S1 -> S2 -> S3 -> S4
+== per request ==
+   req   label prompt_tok arrived_s selected_s  wait_s  priority
+     1 blocker          6      0.00       0.00    0.00         -
+     2       L         52      0.31       5.55    5.25         -
+     3      S1          6      0.62       8.56    7.94         -
+     4      S2          6      0.93      10.06    9.13         -
+     5      S3          6      1.23      11.25   10.02         -
+     6      S4          6      1.54      12.35   10.81         -
+== [SCHED] / [ROUTE] log ==
+  2026-11-10 12:36:15.113 mono=254.486 INFO gateway [SCHED] queued req=1 prompt_tokens=6 queue_len=1
+  2026-11-10 12:36:15.114 mono=254.487 INFO gateway [SCHED] selected req=1 policy=fcfs prompt_tokens=6 wait_s=0.001 reason=oldest still_waiting=0
+  2026-11-10 12:36:15.114 mono=254.487 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:15.418 mono=254.792 INFO gateway [SCHED] queued req=2 prompt_tokens=52 queue_len=1
+  2026-11-10 12:36:15.729 mono=255.103 INFO gateway [SCHED] queued req=3 prompt_tokens=6 queue_len=2
+  2026-11-10 12:36:16.040 mono=255.413 INFO gateway [SCHED] queued req=4 prompt_tokens=6 queue_len=3
+  2026-11-10 12:36:16.345 mono=255.718 INFO gateway [SCHED] queued req=5 prompt_tokens=6 queue_len=4
+  2026-11-10 12:36:16.656 mono=256.029 INFO gateway [SCHED] queued req=6 prompt_tokens=6 queue_len=5
+  2026-11-10 12:36:20.664 mono=260.038 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=16 ttft_s=3.058 total_s=5.550
+  2026-11-10 12:36:20.665 mono=260.038 INFO gateway [SCHED] selected req=2 policy=fcfs prompt_tokens=52 wait_s=5.247 reason=oldest still_waiting=4
+  2026-11-10 12:36:20.665 mono=260.038 INFO gateway [ROUTE] dispatch req=2 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:23.673 mono=263.047 INFO gateway [ROUTE] complete req=2 replica=r1 tokens=3 ttft_s=2.502 total_s=3.008
+  2026-11-10 12:36:23.674 mono=263.047 INFO gateway [SCHED] selected req=3 policy=fcfs prompt_tokens=6 wait_s=7.944 reason=oldest still_waiting=3
+  2026-11-10 12:36:23.674 mono=263.047 INFO gateway [ROUTE] dispatch req=3 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:25.167 mono=264.541 INFO gateway [ROUTE] complete req=3 replica=r1 tokens=4 ttft_s=0.990 total_s=1.494
+  2026-11-10 12:36:25.168 mono=264.541 INFO gateway [SCHED] selected req=4 policy=fcfs prompt_tokens=6 wait_s=9.128 reason=oldest still_waiting=2
+  2026-11-10 12:36:25.168 mono=264.541 INFO gateway [ROUTE] dispatch req=4 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:26.359 mono=265.732 INFO gateway [ROUTE] complete req=4 replica=r1 tokens=4 ttft_s=0.691 total_s=1.190
+  2026-11-10 12:36:26.359 mono=265.733 INFO gateway [SCHED] selected req=5 policy=fcfs prompt_tokens=6 wait_s=10.015 reason=oldest still_waiting=1
+  2026-11-10 12:36:26.360 mono=265.733 INFO gateway [ROUTE] dispatch req=5 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:27.463 mono=266.837 INFO gateway [ROUTE] complete req=5 replica=r1 tokens=4 ttft_s=0.608 total_s=1.103
+  2026-11-10 12:36:27.464 mono=266.837 INFO gateway [SCHED] selected req=6 policy=fcfs prompt_tokens=6 wait_s=10.808 reason=oldest still_waiting=0
+  2026-11-10 12:36:27.464 mono=266.837 INFO gateway [ROUTE] dispatch req=6 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:28.661 mono=268.034 INFO gateway [ROUTE] complete req=6 replica=r1 tokens=4 ttft_s=0.694 total_s=1.196
+== checks ==
+PASS: all 6 clients got [DONE] and no error (6/6)
+PASS: every request was selected exactly once
+PASS: replica container removed after gateway exit
+PASS: fcfs: service order equals arrival order
+
+################ run B_spf ################
+policy=spf_aging aging_alpha=5.0
+== service order (from [SCHED] selected) ==
+  blocker -> S1 -> S2 -> S3 -> S4 -> L
+== per request ==
+   req   label prompt_tok arrived_s selected_s  wait_s  priority
+     1 blocker          6      0.00       0.00    0.00       6.0
+     3      S1          6      0.62       4.32    3.70     -12.5
+     4      S2          6      0.94       6.03    5.09     -19.5
+     5      S3          6      1.24       7.43    6.19     -24.9
+     6      S4          6      1.55       8.82    7.28     -30.4
+     2       L         52      0.31      10.52   10.22       0.9
+== [SCHED] / [ROUTE] log ==
+  2026-11-10 12:36:31.692 mono=271.066 INFO gateway [SCHED] queued req=1 prompt_tokens=6 queue_len=1
+  2026-11-10 12:36:31.693 mono=271.066 INFO gateway [SCHED] selected req=1 policy=spf_aging prompt_tokens=6 wait_s=0.000 priority=6.0 next_best=none still_waiting=0
+  2026-11-10 12:36:31.693 mono=271.066 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:31.998 mono=271.371 INFO gateway [SCHED] queued req=2 prompt_tokens=52 queue_len=1
+  2026-11-10 12:36:32.313 mono=271.686 INFO gateway [SCHED] queued req=3 prompt_tokens=6 queue_len=2
+  2026-11-10 12:36:32.628 mono=272.002 INFO gateway [SCHED] queued req=4 prompt_tokens=6 queue_len=3
+  2026-11-10 12:36:32.933 mono=272.307 INFO gateway [SCHED] queued req=5 prompt_tokens=6 queue_len=4
+  2026-11-10 12:36:33.238 mono=272.611 INFO gateway [SCHED] queued req=6 prompt_tokens=6 queue_len=5
+  2026-11-10 12:36:36.012 mono=275.386 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=16 ttft_s=1.814 total_s=4.319
+  2026-11-10 12:36:36.013 mono=275.386 INFO gateway [SCHED] selected req=3 policy=spf_aging prompt_tokens=6 wait_s=3.700 priority=-12.5 next_best=req4:-10.9 still_waiting=4
+  2026-11-10 12:36:36.013 mono=275.386 INFO gateway [ROUTE] dispatch req=3 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:37.722 mono=277.095 INFO gateway [ROUTE] complete req=3 replica=r1 tokens=4 ttft_s=1.208 total_s=1.709
+  2026-11-10 12:36:37.722 mono=277.096 INFO gateway [SCHED] selected req=4 policy=spf_aging prompt_tokens=6 wait_s=5.094 priority=-19.5 next_best=req5:-17.9 still_waiting=3
+  2026-11-10 12:36:37.723 mono=277.096 INFO gateway [ROUTE] dispatch req=4 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:39.121 mono=278.494 INFO gateway [ROUTE] complete req=4 replica=r1 tokens=4 ttft_s=0.898 total_s=1.398
+  2026-11-10 12:36:39.121 mono=278.494 INFO gateway [SCHED] selected req=5 policy=spf_aging prompt_tokens=6 wait_s=6.188 priority=-24.9 next_best=req6:-23.4 still_waiting=2
+  2026-11-10 12:36:39.121 mono=278.494 INFO gateway [ROUTE] dispatch req=5 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:38.296 mono=279.889 INFO gateway [ROUTE] complete req=5 replica=r1 tokens=4 ttft_s=0.901 total_s=1.394
+  2026-11-10 12:36:38.296 mono=279.889 INFO gateway [SCHED] selected req=6 policy=spf_aging prompt_tokens=6 wait_s=7.278 priority=-30.4 next_best=req2:9.4 still_waiting=1
+  2026-11-10 12:36:38.296 mono=279.889 INFO gateway [ROUTE] dispatch req=6 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:39.996 mono=281.589 INFO gateway [ROUTE] complete req=6 replica=r1 tokens=4 ttft_s=1.104 total_s=1.699
+  2026-11-10 12:36:39.997 mono=281.590 INFO gateway [SCHED] selected req=2 policy=spf_aging prompt_tokens=52 wait_s=10.219 priority=0.9 next_best=none still_waiting=0
+  2026-11-10 12:36:39.997 mono=281.590 INFO gateway [ROUTE] dispatch req=2 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:43.789 mono=285.382 INFO gateway [ROUTE] complete req=2 replica=r1 tokens=3 ttft_s=3.197 total_s=3.792
+== checks ==
+PASS: all 6 clients got [DONE] and no error (6/6)
+PASS: every request was selected exactly once
+PASS: replica container removed after gateway exit
+PASS: spf_aging: all short requests served before the long one
+
+################ run C_aging ################
+policy=spf_aging aging_alpha=5.0
+== service order (from [SCHED] selected) ==
+  blocker -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8 -> S9 -> L -> S10 -> S11 -> S12 -> S13 -> S14 -> S15 -> S16
+== per request ==
+   req   label prompt_tok arrived_s selected_s  wait_s  priority
+     1 blocker          6      0.00       0.00    0.00       6.0
+     3      S1          6      1.34       6.30    4.96     -18.8
+     4      S2          6      2.33       8.90    6.57     -26.8
+     5      S3          6      3.34      11.10    7.76     -32.8
+     6      S4          6      4.35      13.11    8.76     -37.8
+     7      S5          6      5.36      15.00    9.64     -42.2
+     8      S6          6      6.37      17.31   10.93     -48.7
+     9      S7          6      7.38      19.60   12.22     -55.1
+    10      S8          6      8.39      21.10   12.71     -57.5
+    11      S9          6      9.40      23.01   13.61     -62.1
+     2       L         52      0.31      24.81   24.50     -70.5
+    12     S10          6     10.42      29.30   18.88     -88.4
+    13     S11          6     11.42      31.10   19.68     -92.4
+    14     S12          6     12.43      33.20   20.77     -97.9
+    15     S13          6     13.43      35.20   21.77    -102.8
+    16     S14          6     14.44      36.80   22.36    -105.8
+    17     S15          6     15.45      38.31   22.86    -108.3
+    18     S16          6     16.46      39.99   23.53    -111.6
+== [SCHED] / [ROUTE] log ==
+  2026-11-10 12:36:47.451 mono=289.044 INFO gateway [SCHED] queued req=1 prompt_tokens=6 queue_len=1
+  2026-11-10 12:36:47.452 mono=289.045 INFO gateway [SCHED] selected req=1 policy=spf_aging prompt_tokens=6 wait_s=0.001 priority=6.0 next_best=none still_waiting=0
+  2026-11-10 12:36:47.452 mono=289.045 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:47.758 mono=289.351 INFO gateway [SCHED] queued req=2 prompt_tokens=52 queue_len=1
+  2026-11-10 12:36:48.788 mono=290.381 INFO gateway [SCHED] queued req=3 prompt_tokens=6 queue_len=2
+  2026-11-10 12:36:49.783 mono=291.376 INFO gateway [SCHED] queued req=4 prompt_tokens=6 queue_len=3
+  2026-11-10 12:36:50.795 mono=292.388 INFO gateway [SCHED] queued req=5 prompt_tokens=6 queue_len=4
+  2026-11-10 12:36:51.803 mono=293.397 INFO gateway [SCHED] queued req=6 prompt_tokens=6 queue_len=5
+  2026-11-10 12:36:52.814 mono=294.407 INFO gateway [SCHED] queued req=7 prompt_tokens=6 queue_len=6
+  2026-11-10 12:36:53.751 mono=295.344 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=16 ttft_s=2.704 total_s=6.298
+  2026-11-10 12:36:53.752 mono=295.346 INFO gateway [SCHED] selected req=3 policy=spf_aging prompt_tokens=6 wait_s=4.965 priority=-18.8 next_best=req4:-13.8 still_waiting=5
+  2026-11-10 12:36:53.753 mono=295.346 INFO gateway [ROUTE] dispatch req=3 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:53.825 mono=295.418 INFO gateway [SCHED] queued req=8 prompt_tokens=6 queue_len=6
+  2026-11-10 12:36:54.830 mono=296.423 INFO gateway [SCHED] queued req=9 prompt_tokens=6 queue_len=7
+  2026-11-10 12:36:55.841 mono=297.435 INFO gateway [SCHED] queued req=10 prompt_tokens=6 queue_len=8
+  2026-11-10 12:36:56.350 mono=297.943 INFO gateway [ROUTE] complete req=3 replica=r1 tokens=4 ttft_s=1.600 total_s=2.597
+  2026-11-10 12:36:56.350 mono=297.944 INFO gateway [SCHED] selected req=4 policy=spf_aging prompt_tokens=6 wait_s=6.567 priority=-26.8 next_best=req5:-21.8 still_waiting=7
+  2026-11-10 12:36:56.351 mono=297.944 INFO gateway [ROUTE] dispatch req=4 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:56.848 mono=298.441 INFO gateway [SCHED] queued req=11 prompt_tokens=6 queue_len=8
+  2026-11-10 12:36:57.866 mono=299.460 INFO gateway [SCHED] queued req=12 prompt_tokens=6 queue_len=9
+  2026-11-10 12:36:58.550 mono=300.144 INFO gateway [ROUTE] complete req=4 replica=r1 tokens=4 ttft_s=1.496 total_s=2.199
+  2026-11-10 12:36:58.552 mono=300.145 INFO gateway [SCHED] selected req=5 policy=spf_aging prompt_tokens=6 wait_s=7.757 priority=-32.8 next_best=req6:-27.7 still_waiting=8
+  2026-11-10 12:36:58.552 mono=300.145 INFO gateway [ROUTE] dispatch req=5 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:36:58.871 mono=300.464 INFO gateway [SCHED] queued req=13 prompt_tokens=6 queue_len=9
+  2026-11-10 12:36:59.879 mono=301.472 INFO gateway [SCHED] queued req=14 prompt_tokens=6 queue_len=10
+  2026-11-10 12:37:00.557 mono=302.150 INFO gateway [ROUTE] complete req=5 replica=r1 tokens=4 ttft_s=1.203 total_s=2.005
+  2026-11-10 12:37:00.558 mono=302.151 INFO gateway [SCHED] selected req=6 policy=spf_aging prompt_tokens=6 wait_s=8.755 priority=-37.8 next_best=req7:-32.7 still_waiting=9
+  2026-11-10 12:37:00.558 mono=302.151 INFO gateway [ROUTE] dispatch req=6 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:00.884 mono=302.478 INFO gateway [SCHED] queued req=15 prompt_tokens=6 queue_len=10
+  2026-11-10 12:37:01.896 mono=303.489 INFO gateway [SCHED] queued req=16 prompt_tokens=6 queue_len=11
+  2026-11-10 12:37:02.450 mono=304.044 INFO gateway [ROUTE] complete req=6 replica=r1 tokens=4 ttft_s=1.097 total_s=1.892
+  2026-11-10 12:37:02.451 mono=304.044 INFO gateway [SCHED] selected req=7 policy=spf_aging prompt_tokens=6 wait_s=9.637 priority=-42.2 next_best=req8:-37.1 still_waiting=10
+  2026-11-10 12:37:02.451 mono=304.044 INFO gateway [ROUTE] dispatch req=7 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:02.902 mono=304.496 INFO gateway [SCHED] queued req=17 prompt_tokens=6 queue_len=11
+  2026-11-10 12:37:03.914 mono=305.507 INFO gateway [SCHED] queued req=18 prompt_tokens=6 queue_len=12
+  2026-11-10 12:37:04.757 mono=306.350 INFO gateway [ROUTE] complete req=7 replica=r1 tokens=4 ttft_s=1.302 total_s=2.306
+  2026-11-10 12:37:04.758 mono=306.351 INFO gateway [SCHED] selected req=8 policy=spf_aging prompt_tokens=6 wait_s=10.933 priority=-48.7 next_best=req9:-43.6 still_waiting=11
+  2026-11-10 12:37:04.758 mono=306.351 INFO gateway [ROUTE] dispatch req=8 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:07.050 mono=308.643 INFO gateway [ROUTE] complete req=8 replica=r1 tokens=4 ttft_s=1.395 total_s=2.292
+  2026-11-10 12:37:07.051 mono=308.644 INFO gateway [SCHED] selected req=9 policy=spf_aging prompt_tokens=6 wait_s=12.221 priority=-55.1 next_best=req10:-50.0 still_waiting=10
+  2026-11-10 12:37:07.051 mono=308.644 INFO gateway [ROUTE] dispatch req=9 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:08.549 mono=310.142 INFO gateway [ROUTE] complete req=9 replica=r1 tokens=4 ttft_s=1.091 total_s=1.498
+  2026-11-10 12:37:08.550 mono=310.143 INFO gateway [SCHED] selected req=10 policy=spf_aging prompt_tokens=6 wait_s=12.708 priority=-57.5 next_best=req11:-52.5 still_waiting=9
+  2026-11-10 12:37:08.550 mono=310.143 INFO gateway [ROUTE] dispatch req=10 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:08.304 mono=312.051 INFO gateway [ROUTE] complete req=10 replica=r1 tokens=4 ttft_s=1.205 total_s=1.907
+  2026-11-10 12:37:08.305 mono=312.052 INFO gateway [SCHED] selected req=11 policy=spf_aging prompt_tokens=6 wait_s=13.611 priority=-62.1 next_best=req2:-61.5 still_waiting=8
+  2026-11-10 12:37:08.305 mono=312.052 INFO gateway [ROUTE] dispatch req=11 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:10.103 mono=313.849 INFO gateway [ROUTE] complete req=11 replica=r1 tokens=4 ttft_s=1.194 total_s=1.797
+  2026-11-10 12:37:10.103 mono=313.850 INFO gateway [SCHED] selected req=2 policy=spf_aging prompt_tokens=52 wait_s=24.499 priority=-70.5 next_best=req12:-66.0 still_waiting=7
+  2026-11-10 12:37:10.103 mono=313.850 INFO gateway [ROUTE] dispatch req=2 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:14.596 mono=318.343 INFO gateway [ROUTE] complete req=2 replica=r1 tokens=3 ttft_s=3.697 total_s=4.493
+  2026-11-10 12:37:14.597 mono=318.343 INFO gateway [SCHED] selected req=12 policy=spf_aging prompt_tokens=6 wait_s=18.884 priority=-88.4 next_best=req13:-83.4 still_waiting=6
+  2026-11-10 12:37:14.597 mono=318.344 INFO gateway [ROUTE] dispatch req=12 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:16.396 mono=320.143 INFO gateway [ROUTE] complete req=12 replica=r1 tokens=4 ttft_s=1.197 total_s=1.799
+  2026-11-10 12:37:16.397 mono=320.143 INFO gateway [SCHED] selected req=13 policy=spf_aging prompt_tokens=6 wait_s=19.680 priority=-92.4 next_best=req14:-87.4 still_waiting=5
+  2026-11-10 12:37:16.397 mono=320.144 INFO gateway [ROUTE] dispatch req=13 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:18.499 mono=322.246 INFO gateway [ROUTE] complete req=13 replica=r1 tokens=4 ttft_s=1.395 total_s=2.102
+  2026-11-10 12:37:18.500 mono=322.247 INFO gateway [SCHED] selected req=14 policy=spf_aging prompt_tokens=6 wait_s=20.774 priority=-97.9 next_best=req15:-92.8 still_waiting=4
+  2026-11-10 12:37:18.500 mono=322.247 INFO gateway [ROUTE] dispatch req=14 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:20.498 mono=324.245 INFO gateway [ROUTE] complete req=14 replica=r1 tokens=4 ttft_s=1.303 total_s=1.998
+  2026-11-10 12:37:20.499 mono=324.246 INFO gateway [SCHED] selected req=15 policy=spf_aging prompt_tokens=6 wait_s=21.768 priority=-102.8 next_best=req16:-97.8 still_waiting=3
+  2026-11-10 12:37:20.499 mono=324.246 INFO gateway [ROUTE] dispatch req=15 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:22.100 mono=325.847 INFO gateway [ROUTE] complete req=15 replica=r1 tokens=4 ttft_s=0.795 total_s=1.600
+  2026-11-10 12:37:22.101 mono=325.848 INFO gateway [SCHED] selected req=16 policy=spf_aging prompt_tokens=6 wait_s=22.359 priority=-105.8 next_best=req17:-100.8 still_waiting=2
+  2026-11-10 12:37:22.101 mono=325.848 INFO gateway [ROUTE] dispatch req=16 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:23.608 mono=327.354 INFO gateway [ROUTE] complete req=16 replica=r1 tokens=4 ttft_s=0.895 total_s=1.506
+  2026-11-10 12:37:23.608 mono=327.355 INFO gateway [SCHED] selected req=17 policy=spf_aging prompt_tokens=6 wait_s=22.859 priority=-108.3 next_best=req18:-103.2 still_waiting=1
+  2026-11-10 12:37:23.609 mono=327.355 INFO gateway [ROUTE] dispatch req=17 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:25.289 mono=329.036 INFO gateway [ROUTE] complete req=17 replica=r1 tokens=4 ttft_s=1.092 total_s=1.680
+  2026-11-10 12:37:25.289 mono=329.036 INFO gateway [SCHED] selected req=18 policy=spf_aging prompt_tokens=6 wait_s=23.529 priority=-111.6 next_best=none still_waiting=0
+  2026-11-10 12:37:25.289 mono=329.036 INFO gateway [ROUTE] dispatch req=18 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:26.801 mono=330.548 INFO gateway [ROUTE] complete req=18 replica=r1 tokens=4 ttft_s=0.913 total_s=1.512
+== checks ==
+PASS: all 18 clients got [DONE] and no error (18/18)
+PASS: every request was selected exactly once
+PASS: replica container removed after gateway exit
+   L: prompt_tokens=52, wait=24.50 s; crossover bound (p_L - p_S)/alpha = 9.20 s
+   shorts served before L: 9, after L: 7
+PASS: aging: L was served while short requests were still waiting
+PASS: aging: every short served before L arrived within the bound after L
+
+################ run D_no_aging ################
+policy=spf_aging aging_alpha=0.0
+== service order (from [SCHED] selected) ==
+  blocker -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8 -> S9 -> S10 -> S11 -> S12 -> S13 -> S14 -> S15 -> S16 -> L
+== per request ==
+   req   label prompt_tok arrived_s selected_s  wait_s  priority
+     1 blocker          6      0.00       0.00    0.00       6.0
+     3      S1          6      1.32       6.59    5.27       6.0
+     4      S2          6      2.33       7.99    5.66       6.0
+     5      S3          6      3.35       9.18    5.83       6.0
+     6      S4          6      4.35      10.59    6.24       6.0
+     7      S5          6      5.36      12.09    6.73       6.0
+     8      S6          6      6.36      13.69    7.33       6.0
+     9      S7          6      7.37      14.98    7.61       6.0
+    10      S8          6      8.38      16.19    7.81       6.0
+    11      S9          6      9.38      17.29    7.91       6.0
+    12     S10          6     10.39      18.49    8.10       6.0
+    13     S11          6     11.39      19.79    8.39       6.0
+    14     S12          6     12.39      21.09    8.69       6.0
+    15     S13          6     13.40      22.29    8.89       6.0
+    16     S14          6     14.42      23.59    9.17       6.0
+    17     S15          6     15.46      25.19    9.73       6.0
+    18     S16          6     16.49      26.39    9.90       6.0
+     2       L         52      0.31      27.59   27.28      52.0
+== [SCHED] / [ROUTE] log ==
+  2026-11-10 12:37:30.472 mono=334.219 INFO gateway [SCHED] queued req=1 prompt_tokens=6 queue_len=1
+  2026-11-10 12:37:30.473 mono=334.220 INFO gateway [SCHED] selected req=1 policy=spf_aging prompt_tokens=6 wait_s=0.000 priority=6.0 next_best=none still_waiting=0
+  2026-11-10 12:37:30.473 mono=334.220 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:30.777 mono=334.524 INFO gateway [SCHED] queued req=2 prompt_tokens=52 queue_len=1
+  2026-11-10 12:37:31.791 mono=335.538 INFO gateway [SCHED] queued req=3 prompt_tokens=6 queue_len=2
+  2026-11-10 12:37:32.802 mono=336.549 INFO gateway [SCHED] queued req=4 prompt_tokens=6 queue_len=3
+  2026-11-10 12:37:33.819 mono=337.566 INFO gateway [SCHED] queued req=5 prompt_tokens=6 queue_len=4
+  2026-11-10 12:37:34.821 mono=338.567 INFO gateway [SCHED] queued req=6 prompt_tokens=6 queue_len=5
+  2026-11-10 12:37:35.829 mono=339.576 INFO gateway [SCHED] queued req=7 prompt_tokens=6 queue_len=6
+  2026-11-10 12:37:36.836 mono=340.583 INFO gateway [SCHED] queued req=8 prompt_tokens=6 queue_len=7
+  2026-11-10 12:37:37.059 mono=340.806 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=16 ttft_s=3.684 total_s=6.586
+  2026-11-10 12:37:37.060 mono=340.806 INFO gateway [SCHED] selected req=3 policy=spf_aging prompt_tokens=6 wait_s=5.269 priority=6.0 next_best=req4:6.0 still_waiting=6
+  2026-11-10 12:37:37.060 mono=340.807 INFO gateway [ROUTE] dispatch req=3 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:37.843 mono=341.589 INFO gateway [SCHED] queued req=9 prompt_tokens=6 queue_len=7
+  2026-11-10 12:37:38.460 mono=342.207 INFO gateway [ROUTE] complete req=3 replica=r1 tokens=4 ttft_s=0.896 total_s=1.400
+  2026-11-10 12:37:38.461 mono=342.208 INFO gateway [SCHED] selected req=4 policy=spf_aging prompt_tokens=6 wait_s=5.659 priority=6.0 next_best=req5:6.0 still_waiting=6
+  2026-11-10 12:37:38.462 mono=342.208 INFO gateway [ROUTE] dispatch req=4 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:38.850 mono=342.597 INFO gateway [SCHED] queued req=10 prompt_tokens=6 queue_len=7
+  2026-11-10 12:37:39.651 mono=343.398 INFO gateway [ROUTE] complete req=4 replica=r1 tokens=4 ttft_s=0.605 total_s=1.189
+  2026-11-10 12:37:39.652 mono=343.399 INFO gateway [SCHED] selected req=5 policy=spf_aging prompt_tokens=6 wait_s=5.833 priority=6.0 next_best=req6:6.0 still_waiting=6
+  2026-11-10 12:37:39.652 mono=343.399 INFO gateway [ROUTE] dispatch req=5 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:37.646 mono=343.599 INFO gateway [SCHED] queued req=11 prompt_tokens=6 queue_len=7
+  2026-11-10 12:37:38.656 mono=344.609 INFO gateway [SCHED] queued req=12 prompt_tokens=6 queue_len=8
+  2026-11-10 12:37:38.852 mono=344.804 INFO gateway [ROUTE] complete req=5 replica=r1 tokens=4 ttft_s=0.804 total_s=1.405
+  2026-11-10 12:37:38.852 mono=344.805 INFO gateway [SCHED] selected req=6 policy=spf_aging prompt_tokens=6 wait_s=6.238 priority=6.0 next_best=req7:6.0 still_waiting=7
+  2026-11-10 12:37:38.853 mono=344.805 INFO gateway [ROUTE] dispatch req=6 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:39.659 mono=345.611 INFO gateway [SCHED] queued req=13 prompt_tokens=6 queue_len=8
+  2026-11-10 12:37:40.352 mono=346.304 INFO gateway [ROUTE] complete req=6 replica=r1 tokens=4 ttft_s=0.799 total_s=1.499
+  2026-11-10 12:37:40.352 mono=346.305 INFO gateway [SCHED] selected req=7 policy=spf_aging prompt_tokens=6 wait_s=6.729 priority=6.0 next_best=req8:6.0 still_waiting=7
+  2026-11-10 12:37:40.353 mono=346.305 INFO gateway [ROUTE] dispatch req=7 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:40.662 mono=346.614 INFO gateway [SCHED] queued req=14 prompt_tokens=6 queue_len=8
+  2026-11-10 12:37:41.668 mono=347.621 INFO gateway [SCHED] queued req=15 prompt_tokens=6 queue_len=9
+  2026-11-10 12:37:41.960 mono=347.913 INFO gateway [ROUTE] complete req=7 replica=r1 tokens=4 ttft_s=0.998 total_s=1.607
+  2026-11-10 12:37:41.961 mono=347.913 INFO gateway [SCHED] selected req=8 policy=spf_aging prompt_tokens=6 wait_s=7.331 priority=6.0 next_best=req9:6.0 still_waiting=8
+  2026-11-10 12:37:41.961 mono=347.913 INFO gateway [ROUTE] dispatch req=8 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:42.687 mono=348.640 INFO gateway [SCHED] queued req=16 prompt_tokens=6 queue_len=9
+  2026-11-10 12:37:43.249 mono=349.202 INFO gateway [ROUTE] complete req=8 replica=r1 tokens=4 ttft_s=0.695 total_s=1.288
+  2026-11-10 12:37:43.250 mono=349.202 INFO gateway [SCHED] selected req=9 policy=spf_aging prompt_tokens=6 wait_s=7.613 priority=6.0 next_best=req10:6.0 still_waiting=8
+  2026-11-10 12:37:43.250 mono=349.202 INFO gateway [ROUTE] dispatch req=9 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:43.726 mono=349.679 INFO gateway [SCHED] queued req=17 prompt_tokens=6 queue_len=9
+  2026-11-10 12:37:44.456 mono=350.408 INFO gateway [ROUTE] complete req=9 replica=r1 tokens=4 ttft_s=0.609 total_s=1.206
+  2026-11-10 12:37:44.456 mono=350.409 INFO gateway [SCHED] selected req=10 policy=spf_aging prompt_tokens=6 wait_s=7.812 priority=6.0 next_best=req11:6.0 still_waiting=8
+  2026-11-10 12:37:44.456 mono=350.409 INFO gateway [ROUTE] dispatch req=10 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:44.756 mono=350.708 INFO gateway [SCHED] queued req=18 prompt_tokens=6 queue_len=9
+  2026-11-10 12:37:45.558 mono=351.511 INFO gateway [ROUTE] complete req=10 replica=r1 tokens=4 ttft_s=0.694 total_s=1.102
+  2026-11-10 12:37:45.559 mono=351.511 INFO gateway [SCHED] selected req=11 policy=spf_aging prompt_tokens=6 wait_s=7.912 priority=6.0 next_best=req12:6.0 still_waiting=8
+  2026-11-10 12:37:45.559 mono=351.511 INFO gateway [ROUTE] dispatch req=11 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:46.757 mono=352.710 INFO gateway [ROUTE] complete req=11 replica=r1 tokens=4 ttft_s=0.792 total_s=1.198
+  2026-11-10 12:37:46.758 mono=352.711 INFO gateway [SCHED] selected req=12 policy=spf_aging prompt_tokens=6 wait_s=8.102 priority=6.0 next_best=req13:6.0 still_waiting=7
+  2026-11-10 12:37:46.758 mono=352.711 INFO gateway [ROUTE] dispatch req=12 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:48.052 mono=354.005 INFO gateway [ROUTE] complete req=12 replica=r1 tokens=4 ttft_s=0.787 total_s=1.294
+  2026-11-10 12:37:48.053 mono=354.006 INFO gateway [SCHED] selected req=13 policy=spf_aging prompt_tokens=6 wait_s=8.394 priority=6.0 next_best=req14:6.0 still_waiting=6
+  2026-11-10 12:37:48.053 mono=354.006 INFO gateway [ROUTE] dispatch req=13 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:49.352 mono=355.305 INFO gateway [ROUTE] complete req=13 replica=r1 tokens=4 ttft_s=0.798 total_s=1.299
+  2026-11-10 12:37:49.353 mono=355.305 INFO gateway [SCHED] selected req=14 policy=spf_aging prompt_tokens=6 wait_s=8.691 priority=6.0 next_best=req15:6.0 still_waiting=5
+  2026-11-10 12:37:49.353 mono=355.306 INFO gateway [ROUTE] dispatch req=14 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:50.558 mono=356.511 INFO gateway [ROUTE] complete req=14 replica=r1 tokens=4 ttft_s=0.793 total_s=1.205
+  2026-11-10 12:37:50.559 mono=356.511 INFO gateway [SCHED] selected req=15 policy=spf_aging prompt_tokens=6 wait_s=8.891 priority=6.0 next_best=req16:6.0 still_waiting=4
+  2026-11-10 12:37:50.559 mono=356.511 INFO gateway [ROUTE] dispatch req=15 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:51.851 mono=357.805 INFO gateway [ROUTE] complete req=15 replica=r1 tokens=4 ttft_s=0.792 total_s=1.292
+  2026-11-10 12:37:51.853 mono=357.806 INFO gateway [SCHED] selected req=16 policy=spf_aging prompt_tokens=6 wait_s=9.166 priority=6.0 next_best=req17:6.0 still_waiting=3
+  2026-11-10 12:37:51.853 mono=357.806 INFO gateway [ROUTE] dispatch req=16 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:53.453 mono=359.405 INFO gateway [ROUTE] complete req=16 replica=r1 tokens=4 ttft_s=0.700 total_s=1.599
+  2026-11-10 12:37:53.453 mono=359.405 INFO gateway [SCHED] selected req=17 policy=spf_aging prompt_tokens=6 wait_s=9.727 priority=6.0 next_best=req18:6.0 still_waiting=2
+  2026-11-10 12:37:53.453 mono=359.406 INFO gateway [ROUTE] dispatch req=17 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:54.656 mono=360.609 INFO gateway [ROUTE] complete req=17 replica=r1 tokens=4 ttft_s=0.699 total_s=1.203
+  2026-11-10 12:37:54.657 mono=360.610 INFO gateway [SCHED] selected req=18 policy=spf_aging prompt_tokens=6 wait_s=9.902 priority=6.0 next_best=req2:52.0 still_waiting=1
+  2026-11-10 12:37:54.658 mono=360.610 INFO gateway [ROUTE] dispatch req=18 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:55.853 mono=361.805 INFO gateway [ROUTE] complete req=18 replica=r1 tokens=4 ttft_s=0.603 total_s=1.195
+  2026-11-10 12:37:55.854 mono=361.806 INFO gateway [SCHED] selected req=2 policy=spf_aging prompt_tokens=52 wait_s=27.282 priority=52.0 next_best=none still_waiting=0
+  2026-11-10 12:37:55.854 mono=361.806 INFO gateway [ROUTE] dispatch req=2 replica=r1 policy=least_busy loads_before=r1:0/1 in_flight=1
+  2026-11-10 12:37:59.762 mono=365.714 INFO gateway [ROUTE] complete req=2 replica=r1 tokens=3 ttft_s=3.397 total_s=3.908
+== checks ==
+PASS: all 18 clients got [DONE] and no error (18/18)
+PASS: every request was selected exactly once
+PASS: replica container removed after gateway exit
+   L: prompt_tokens=52, wait=27.28 s; crossover bound (p_L - p_S)/alpha = inf s
+   shorts served before L: 16, after L: 0
+PASS: no aging: L served only after every short request (starved while shorts kept coming)

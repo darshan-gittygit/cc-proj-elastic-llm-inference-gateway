@@ -15,8 +15,8 @@ Implemented so far:
   - Phase 1: streaming path, central queue, dispatch loop
   - Phase 2: DockerReplicaManager starts `min_replicas` containers at startup and
              removes them at exit; Router chosen by `router:` in config.yaml
+  - Phase 3: Scheduler chosen by `scheduler:` in config.yaml (fcfs | spf_aging)
 Deliberately NOT here yet (each belongs to its own later phase):
-  - scheduling policies FCFS / SPF+aging      -> Phase 3 (build_scheduler)
   - session affinity                          -> Phase 4
   - HealthMonitor, retry / requeue on failure -> Phase 5
   - autoscaler, warm pool                     -> Phase 6 / 7
@@ -29,7 +29,6 @@ Run (from the project root, on the Linux host that runs Docker):
 from __future__ import annotations
 
 import asyncio
-import collections
 import json
 import os
 import time
@@ -42,9 +41,10 @@ from fastapi import FastAPI
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse, StreamingResponse
 
-import gateway.router  # noqa: F401  (registers round_robin / least_busy)
+import gateway.router     # noqa: F401  (registers round_robin / least_busy)
+import gateway.scheduler  # noqa: F401  (registers fcfs / spf_aging)
 from gateway.interfaces import (Config, EventLog, Replica, ReplicaPool, Request, RequestState,
-                                Scheduler, build_router)
+                                Scheduler, build_router, build_scheduler)
 from gateway.logging_conf import setup_logging
 from gateway.replica_manager import DockerReplicaManager
 
@@ -57,36 +57,6 @@ def estimate_prompt_tokens(messages: list[dict]) -> int:
     return max(1, chars // 4)
 
 
-class PlaceholderFifoQueue(Scheduler):
-    """PLACEHOLDER until Phase 3, not a scheduling policy.
-
-    Holds requests in arrival order so the dispatch loop already talks to the
-    Scheduler interface. It is not registered in SCHEDULERS; Phase 3 replaces it
-    with build_scheduler(cfg) (FCFS / SPF+aging).
-    """
-
-    def __init__(self, log: EventLog) -> None:
-        self._q: collections.deque[Request] = collections.deque()
-        self.log = log
-
-    def push(self, req: Request) -> None:
-        self._q.append(req)
-        self.log.sched("queued", req=req.id, prompt_tokens=req.prompt_tokens, queue_len=len(self._q))
-
-    def pop(self, now: Optional[float] = None) -> Optional[Request]:
-        if not self._q:
-            return None
-        req = self._q.popleft()
-        self.log.sched("dequeued", req=req.id, wait_s=f"{req.wait_time(now):.3f}", queue_len=len(self._q))
-        return req
-
-    def requeue_front(self, req: Request) -> None:
-        self._q.appendleft(req)
-
-    def __len__(self) -> int:
-        return len(self._q)
-
-
 class ReplicaHTTPError(Exception):
     pass
 
@@ -97,7 +67,7 @@ class Gateway:
     def __init__(self, cfg: Config, log: EventLog) -> None:
         self.cfg, self.log = cfg, log
         self.pool = ReplicaPool()
-        self.scheduler: Scheduler = PlaceholderFifoQueue(log)
+        self.scheduler: Scheduler = build_scheduler(cfg, log)
         self.router = build_router(cfg, log)
         self.manager: Optional[DockerReplicaManager] = None
         self._wake = asyncio.Event()
@@ -138,10 +108,13 @@ class Gateway:
         self._wake.set()
 
     def cancel(self, req: Request) -> None:
-        """Client went away: stop its replica stream so the slot is freed."""
+        """Client went away: stop its replica stream so the slot is freed. If the request
+        is still queued, mark it so the dispatch loop drops it instead of dispatching it."""
         t = self._streams.get(req.id)
         if t and not t.done():
             t.cancel()
+        elif req.state == RequestState.QUEUED:
+            req.state = RequestState.FAILED
 
     async def _dispatch_loop(self) -> None:
         while True:
@@ -151,6 +124,9 @@ class Gateway:
                 req = self.scheduler.pop()
                 if req is None:
                     break
+                if req.state == RequestState.FAILED:      # client disconnected while queued
+                    self.log.sched("dropped (client disconnected while queued)", req=req.id)
+                    continue
                 # load snapshot BEFORE the decision, so the log shows why it was made
                 loads = ",".join(f"{r.id}:{r.in_flight}/{r.max_slots}" for r in self.pool.ready())
                 replica = self.router.choose(req, self.pool)
