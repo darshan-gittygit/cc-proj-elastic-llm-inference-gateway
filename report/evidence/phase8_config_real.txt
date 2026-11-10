@@ -1,0 +1,50 @@
+# REAL MODEL RESULT (llama.cpp containers, real model)
+# Phase 8 / demo 5: scheduler, router and prewarm switched by editing the config file + POST /admin/reload
+# Run: 2026-11-10T15:22:08+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# One gateway process; 2 replicas x 1 slot, max_replicas 3. Burst B,B,L,S,S,S,S (B max_tokens=24, others 4), 4-turn session (max_tokens=8).
+
+== gateway log: CONFIG lines and warm-pool events (s after gateway start) ==
+      0.0  [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=1 spare=False
+      0.3  [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=1 spare=False
+     38.3  [CONFIG] reload applied changed=scheduler:fcfs->spf_aging,router:round_robin->session_affinity,prewarm:none->warm_pool queued_moved=0
+     38.8  [SCALE] replica started replica=r3 container=llmgw-replica-r3 ip=172.18.0.4 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=1 spare=True
+     38.8  [SCALE] prewarm spare replica=r3 trigger=idle signal=0.00
+     40.3  [HEALTH] replica ready replica=r3 state=warm load_s=1.94
+     64.5  [CONFIG] reload rejected, nothing changed error=unknown_router_'fastest';_have_['round_robin',_'least_busy',_'session_affinity']
+     68.5  [CONFIG] reload applied changed=prewarm:warm_pool->none queued_moved=0
+     68.9  [SCALE] spare stopped replica=r3 reason=prewarm_none
+     69.4  [SCALE] replica stopped replica=r3 drained=True in_flight_left=0
+
+################ stage A ################
+  burst service order (after the two B requests): L1 -> S1 -> S2 -> S3 -> S4
+  scheduler policy in [SCHED] lines: ['fcfs']
+  session turns -> replicas: ['r1', 'r2', 'r1', 'r2']  (router policy in [ROUTE] lines: ['round_robin'])
+  burst: 7/7 ok; session: 4/4 ok
+
+################ stage B ################
+  burst service order (after the two B requests): S1 -> S2 -> S3 -> S4 -> L1
+  scheduler policy in [SCHED] lines: ['spf_aging']
+  session turns -> replicas: ['r1', 'r1', 'r1', 'r1']  (router policy in [ROUTE] lines: ['session_affinity'])
+  burst: 7/7 ok; session: 4/4 ok
+
+== reload 1: HTTP 200
+  {"applied":true,"changed":{"scheduler":["fcfs","spf_aging"],"router":["round_robin","session_affinity"],"prewarm":["none","warm_pool"]},"ignored_unknown_keys":[]}
+
+== reload 2: HTTP 400
+  {"applied":false,"error":"unknown router 'fastest'; have ['round_robin', 'least_busy', 'session_affinity']"}
+
+== reload 3: HTTP 200
+  {"applied":true,"changed":{"prewarm":["warm_pool","none"]},"ignored_unknown_keys":[]}
+
+== checks ==
+PASS: same gateway process for the whole demo (pid 1155)
+PASS: no restart: the 2 initial replicas were started once and never again
+PASS: all requests in both stages completed
+PASS: reload 1 accepted (HTTP 200) and changed scheduler, router and prewarm
+PASS: scheduler: stage A fcfs served L first (L1), stage B spf_aging served L last (L1)
+PASS: router: stage A round_robin alternated ['r1', 'r2', 'r1', 'r2'], stage B session_affinity kept one replica ['r1', 'r1', 'r1', 'r1']
+PASS: prewarm: no spare under none (stage A: 0), a spare loaded after switching to warm_pool
+PASS: reload 2 (invalid router) rejected with HTTP 400 and logged
+PASS: after the rejected reload the old values stayed (policy=session_affinity, replica r1 = stage B's)
+PASS: reload 3 (prewarm none) accepted and the spare was stopped
+PASS: all replica containers removed after gateway exit

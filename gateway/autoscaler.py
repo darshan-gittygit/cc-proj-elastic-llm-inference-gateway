@@ -126,6 +126,12 @@ class LoadAutoscaler(Autoscaler):
     async def _maintain_warm_pool(self) -> None:
         c = self.cfg
         if c.prewarm != "warm_pool":
+            # prewarm switched to none by a config reload (Phase 8): spares are no longer wanted
+            for r in self.pool.by_state(ReplicaState.WARM_SPARE):
+                self.log.scale("spare stopped", replica=r.id, reason="prewarm_none")
+                t = asyncio.create_task(self.manager.stop_replica(r))
+                self._tasks.add(t)
+                t.add_done_callback(self._tasks.discard)
             return
         spares = self.pool.by_state(ReplicaState.WARM_SPARE)
         if len(spares) >= c.warm_pool_size or self.pool.by_state(ReplicaState.STARTING):

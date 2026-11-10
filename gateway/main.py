@@ -27,9 +27,12 @@ Implemented so far:
              a {"llmgw_retry": ...} event and the output restarts from the beginning.
   - Phase 6: LoadAutoscaler (gateway/autoscaler.py) scales between min_replicas and
              max_replicas and keeps the warm pool (decisions 7, 8)
-Deliberately NOT here yet (each belongs to its own later phase):
-  - prewarm none vs warm_pool measurement     -> Phase 7 (demo 3)
-  - POST /admin/reload                        -> Phase 8
+  - Phase 8: POST /admin/reload re-reads the config file (decision 10). The whole file is
+             validated first; if anything is invalid nothing changes (HTTP 400). Otherwise all
+             values are applied at once, the scheduler / router are rebuilt from the registries
+             when their setting changed, and queued requests move to the new scheduler.
+             Container settings apply to replicas started afterwards. container_prefix and
+             docker_network need a restart and are rejected.
 
 Run (from the project root, on the Linux host that runs Docker):
     uvicorn gateway.main:app --port 8000
@@ -39,14 +42,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
+import yaml
 from fastapi import FastAPI
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -71,6 +76,49 @@ def estimate_prompt_tokens(messages: list[dict]) -> int:
 
 class ReplicaHTTPError(Exception):
     pass
+
+
+RESTART_ONLY = ("container_prefix", "docker_network")   # running containers depend on them
+PREWARM_MODES = ("none", "warm_pool")
+
+
+def validate_config(new: Config, current: Config) -> dict[str, tuple[Any, Any]]:
+    """Checks a freshly loaded Config; returns {key: (old, new)} for the values that differ.
+    Raises ValueError and touches nothing if any value is unusable."""
+    defaults = Config()
+    for f in fields(Config):
+        if f.name == "extra":
+            continue
+        want, got = type(getattr(defaults, f.name)), getattr(new, f.name)
+        ok = (isinstance(got, (int, float)) and not isinstance(got, bool)) if want is float else \
+             (isinstance(got, want) and not isinstance(got, bool))
+        if not ok:
+            raise ValueError(f"{f.name}: expected {want.__name__}, got {got!r}")
+    if new.prewarm not in PREWARM_MODES:
+        raise ValueError(f"prewarm: expected one of {PREWARM_MODES}, got {new.prewarm!r}")
+    if not 1 <= new.min_replicas <= new.max_replicas:
+        raise ValueError(f"need 1 <= min_replicas <= max_replicas, got {new.min_replicas} / {new.max_replicas}")
+    for key in RESTART_ONLY:
+        if getattr(new, key) != getattr(current, key):
+            raise ValueError(f"{key} cannot change while running (restart the gateway)")
+    return {f.name: (getattr(current, f.name), getattr(new, f.name)) for f in fields(Config)
+            if f.name != "extra" and getattr(current, f.name) != getattr(new, f.name)}
+
+
+@contextmanager
+def _quiet(scheduler: Scheduler):
+    """Moving requests between schedulers is not a scheduling decision: mute their log meanwhile."""
+    log = getattr(scheduler, "log", None)
+    if log is None:
+        yield
+        return
+    silent = EventLog("gateway.reload-move")
+    logging.getLogger("gateway.reload-move").disabled = True
+    scheduler.log = silent
+    try:
+        yield
+    finally:
+        scheduler.log = log
 
 
 @dataclass
@@ -154,6 +202,47 @@ class Gateway:
             t.cancel()
         elif req.state == RequestState.QUEUED:
             req.state = RequestState.FAILED
+
+    def reload(self, new: Config) -> dict[str, tuple[Any, Any]]:
+        """Decision 10. Validate everything first (raises ValueError, nothing changed), then apply
+        everything in one step with no await in between, so the dispatch loop never sees a
+        half-applied config. Returns the changed keys."""
+        changed = validate_config(new, self.cfg)
+        new_sched = build_scheduler(new, self.log) if {"scheduler", "aging_alpha"} & changed.keys() else None
+        new_router = build_router(new, self.log) if "router" in changed else None
+        # ---- apply (nothing below can fail on bad input) ----
+        for key, (_, value) in changed.items():
+            setattr(self.cfg, key, value)               # manager / health / autoscaler share this object
+        moved = 0
+        if new_sched is not None:
+            old = self.scheduler
+            with _quiet(old):
+                waiting = []
+                while (r := old.pop()) is not None:       # front (retried) requests come out first
+                    if r.state != RequestState.FAILED:  # client already gone: drop
+                        waiting.append(r)
+            # Decision 6: a retried request (dispatched before, attempts > 0) stays at the FRONT.
+            retries = [r for r in waiting if r.attempts > 0]          # keep their current order
+            fresh = sorted((r for r in waiting if r.attempts == 0), key=lambda r: (r.arrival_ts, r.id))
+            with _quiet(new_sched):
+                for r in fresh:
+                    new_sched.push(r)
+                # FCFS.requeue_front prepends (last call ends up first); SPF's appends to its
+                # front deque (first call ends up first). Feed them so the order is unchanged.
+                is_fcfs = isinstance(new_sched, gateway.scheduler.FCFSScheduler)
+                for r in (reversed(retries) if is_fcfs else retries):
+                    new_sched.requeue_front(r)
+            moved = len(waiting)
+            self.scheduler = new_sched
+            if self.autoscaler is not None:
+                self.autoscaler.scheduler = new_sched
+        if new_router is not None:
+            self.router = new_router
+        self.log.emit("CONFIG", "reload applied",
+                      changed=",".join(f"{k}:{o}->{n}" for k, (o, n) in changed.items()) or "nothing",
+                      queued_moved=moved)
+        self._wake.set()
+        return changed
 
     async def _on_replica_dead(self, replica: Replica) -> None:
         """HealthMonitor callback: stop the streams still running on a dead replica (they may
@@ -401,3 +490,18 @@ async def chat_completions(http_req: HTTPRequest):
 
     return StreamingResponse(sse(), media_type="text/event-stream",
                              headers={"X-Request-Id": str(req.id), "Cache-Control": "no-cache"})
+
+
+@app.post("/admin/reload")
+async def admin_reload(http_req: HTTPRequest):
+    """Re-read the config file (LLMGW_CONFIG or gateway/config.yaml) and apply it without a restart."""
+    gw: Gateway = http_req.app.state.gw
+    try:
+        new = Config.load(CONFIG_PATH)
+        changed = gw.reload(new)
+    except (OSError, yaml.YAMLError, AttributeError, TypeError, ValueError) as e:
+        one_line = "_".join(str(e).split())      # collapse spaces, tabs, CR/LF: one event per log line
+        gw.log.emit("CONFIG", "reload rejected, nothing changed", error=one_line[:200])
+        return JSONResponse({"applied": False, "error": str(e)}, status_code=400)
+    return {"applied": True, "changed": {k: [o, n] for k, (o, n) in changed.items()},
+            "ignored_unknown_keys": sorted(new.extra)}
