@@ -1,0 +1,34 @@
+# REAL MODEL RESULT (llama.cpp container, real model)
+# Phase 1 check: gateway streams one request through to one replica with curl -N
+# Run: 2026-11-10T11:08:49+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# Replica limits: NanoCpus=1000000000 Memory=1073741824
+# Command: curl -sN http://127.0.0.1:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"Say hello in five words."}],"max_tokens":32,"stream":true}'
+# Left column: time since curl started, measured by the client
+== streamed response ==
++  2.600s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1794308926,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  2.604s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"Hello"}}],"created":1794308926,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  2.708s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"!"}}],"created":1794308926,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  3.007s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" How"}}],"created":1794308927,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  3.299s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" can"}}],"created":1794308927,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  3.504s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" I"}}],"created":1794308927,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  3.702s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" assist"}}],"created":1794308927,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  3.905s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" you"}}],"created":1794308928,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  4.108s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":" today"}}],"created":1794308928,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  4.399s  data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"?"}}],"created":1794308928,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk"}
++  4.605s  data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}],"created":1794308928,"id":"chatcmpl-ZRuvbj7R7Aw3NAQJ8mg3PbSvcv3qW6mx","model":"/models/qwen2.5-0.5b-instruct-q4_k_m.gguf","system_fingerprint":"b12242-3b4d6ab3f","object":"chat.completion.chunk","timings":{"cache_n":0,"prompt_n":35,"prompt_ms":2578.429,"prompt_per_token_ms":73.6694,"prompt_per_second":13.574156976980944,"predicted_n":10,"predicted_ms":2000.434,"predicted_per_token_ms":222.27044444444445,"predicted_per_second":4.4990237118545275}}
++  4.610s  data: [DONE]
+== assembled text ==
+Hello! How can I assist you today?
+== gateway decision log ==
+2026-11-10 11:08:42.083 INFO gateway [HEALTH] replica registered replica=r1 url=http://127.0.0.1:18080 max_slots=2
+2026-11-10 11:08:43.699 INFO gateway [HEALTH] replica ready replica=r1 waited_s=1.62
+2026-11-10 11:08:44.209 INFO gateway [SCHED] queued req=1 prompt_tokens=6 queue_len=1
+2026-11-10 11:08:44.210 INFO gateway [SCHED] dequeued req=1 wait_s=0.001 queue_len=0
+2026-11-10 11:08:44.210 INFO gateway [ROUTE] dispatch req=1 replica=r1 in_flight=1 free_slots=1
+2026-11-10 11:08:48.797 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=9 ttft_s=2.583 total_s=4.587
+== checks ==
+PASS: stream ended with [DONE]
+PASS: more than one chunk arrived over time
+PASS: no error event
+PASS: gateway logged dispatch to r1
+PASS: gateway logged complete

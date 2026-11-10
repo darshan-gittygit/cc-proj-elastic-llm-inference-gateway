@@ -1,0 +1,57 @@
+# SIMULATED RESULT (stand-in replica, no model; timings are NOT model performance)
+# Phase 1 check: gateway streams one request through to one replica with curl -N
+# Run: 2026-11-10T11:08:40+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# Replica limits: n/a (stand-in process: startup-delay 3 s, token-rate 10 tok/s, slots 2)
+# Command: curl -sN http://127.0.0.1:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"Say hello in five words."}],"max_tokens":32,"stream":true}'
+# Left column: time since curl started, measured by the client
+== streamed response ==
++  0.084s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"role": "assistant", "content": null}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.185s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim0 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.286s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim1 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.389s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim2 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.491s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim3 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.594s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim4 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.694s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim5 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.799s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim6 "}}], "created": 1794308917, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  0.899s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim7 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.001s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim8 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.104s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim9 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.205s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim10 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.309s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim11 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.413s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim12 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.512s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim13 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.613s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim14 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.714s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim15 "}}], "created": 1794308918, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.816s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim16 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  1.918s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim17 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.018s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim18 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.119s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim19 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.222s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim20 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.321s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim21 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.424s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim22 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.524s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim23 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.625s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim24 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.725s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim25 "}}], "created": 1794308919, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.830s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim26 "}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  2.929s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim27 "}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  3.029s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim28 "}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  3.132s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim29 "}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  3.233s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim30 "}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  3.335s  data: {"choices": [{"finish_reason": null, "index": 0, "delta": {"content": "sim31 "}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  3.339s  data: {"choices": [{"finish_reason": "length", "index": 0, "delta": {}}], "created": 1794308920, "id": "chatcmpl-sim-b5f51dcc5254", "model": "standin-simulated", "object": "chat.completion.chunk"}
++  3.343s  data: [DONE]
+== assembled text ==
+sim0 sim1 sim2 sim3 sim4 sim5 sim6 sim7 sim8 sim9 sim10 sim11 sim12 sim13 sim14 sim15 sim16 sim17 sim18 sim19 sim20 sim21 sim22 sim23 sim24 sim25 sim26 sim27 sim28 sim29 sim30 sim31 
+== gateway decision log ==
+2026-11-10 11:08:34.103 INFO gateway [HEALTH] replica registered replica=r1 url=http://127.0.0.1:18081 max_slots=2
+2026-11-10 11:08:37.164 INFO gateway [HEALTH] replica ready replica=r1 waited_s=3.06
+2026-11-10 11:08:37.246 INFO gateway [SCHED] queued req=1 prompt_tokens=6 queue_len=1
+2026-11-10 11:08:37.246 INFO gateway [SCHED] dequeued req=1 wait_s=0.000 queue_len=0
+2026-11-10 11:08:37.246 INFO gateway [ROUTE] dispatch req=1 replica=r1 in_flight=1 free_slots=1
+2026-11-10 11:08:40.523 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=32 ttft_s=0.127 total_s=3.277
+== checks ==
+PASS: stream ended with [DONE]
+PASS: more than one chunk arrived over time
+PASS: no error event
+PASS: gateway logged dispatch to r1
+PASS: gateway logged complete

@@ -1,0 +1,7 @@
+# Model weights are not committed (ARCHITECTURE.md section 3)
+models/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
