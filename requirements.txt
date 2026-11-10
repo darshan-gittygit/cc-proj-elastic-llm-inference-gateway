@@ -5,3 +5,4 @@ httpx==0.28.1
 pyyaml==6.0.3
 docker==7.2.0
 pytest==9.2.0
+matplotlib==3.11.2   # Phase 9 plots only (report/measure.py); the gateway does not use it
