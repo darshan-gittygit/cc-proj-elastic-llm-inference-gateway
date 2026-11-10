@@ -19,8 +19,13 @@ Implemented so far:
   - Phase 4: optional "session_id" in the request body. The gateway keeps each session's
              full history (clients send only the new message) and `router: session_affinity`
              keeps a session on one replica (decision 5)
+  - Phase 5: HealthMonitor (gateway/health.py) marks replicas DEAD and replaces them.
+             A stream that breaks goes back to the FRONT of the queue (up to max_retries)
+             and restarts on another replica. The client's stream continues where it
+             stopped: the regenerated tokens it already has are compared with what it got
+             (assumption #6, greedy decoding) and skipped. If they differ, the client gets
+             a {"llmgw_retry": ...} event and the output restarts from the beginning.
 Deliberately NOT here yet (each belongs to its own later phase):
-  - HealthMonitor, retry / requeue on failure -> Phase 5
   - autoscaler, warm pool                     -> Phase 6 / 7
   - POST /admin/reload                        -> Phase 8
 
@@ -35,6 +40,7 @@ import json
 import os
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -45,8 +51,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 import gateway.router     # noqa: F401  (registers round_robin / least_busy)
 import gateway.scheduler  # noqa: F401  (registers fcfs / spf_aging)
-from gateway.interfaces import (Config, EventLog, Replica, ReplicaPool, Request, RequestState,
-                                Scheduler, build_router, build_scheduler)
+from gateway.health import ProbeHealthMonitor
+from gateway.interfaces import (Config, EventLog, HealthMonitor, Replica, ReplicaPool, Request,
+                                RequestState, Scheduler, build_router, build_scheduler)
 from gateway.logging_conf import setup_logging
 from gateway.replica_manager import DockerReplicaManager
 
@@ -63,6 +70,13 @@ class ReplicaHTTPError(Exception):
     pass
 
 
+@dataclass
+class _Progress:
+    """What the client of one request has received so far, kept across retries."""
+    texts: list[str] = field(default_factory=list)    # content chunks sent to the client, in order
+    forwarded_any: bool = False                        # the opening (role) chunk has been sent
+
+
 class Gateway:
     """Owns the queue, the router, the replica pool and the dispatch loop."""
 
@@ -72,10 +86,14 @@ class Gateway:
         self.scheduler: Scheduler = build_scheduler(cfg, log)
         self.router = build_router(cfg, log)
         self.manager: Optional[DockerReplicaManager] = None
+        self.health: Optional[HealthMonitor] = None
         self._wake = asyncio.Event()
         self._client: Optional[httpx.AsyncClient] = None
         self._background: set[asyncio.Task] = set()
         self._streams: dict[int, asyncio.Task] = {}
+        self._inflight: dict[int, Request] = {}         # dispatched, stream task still running
+        self._progress: dict[int, _Progress] = {}
+        self._retry_ids: set[int] = set()               # stream tasks cancelled by us to requeue them
         # Decision 5: full conversation per session; clients send only the new message(s).
         self.sessions: dict[str, list[dict]] = {}
 
@@ -86,6 +104,9 @@ class Gateway:
         self.manager = DockerReplicaManager(self.cfg, self.pool, self.log, on_change=self._wake.set,
                                             on_removed=lambda r: self.router.on_replica_removed(r))
         await self.manager.setup()
+        self.health = ProbeHealthMonitor(self.cfg, self.pool, self.manager, self.log,
+                                         on_dead=self._on_replica_dead)
+        self._spawn(self.health.run())
         self._spawn(self._dispatch_loop())
         for _ in range(self.cfg.min_replicas):
             await self.manager.start_replica()
@@ -121,11 +142,24 @@ class Gateway:
     def cancel(self, req: Request) -> None:
         """Client went away: stop its replica stream so the slot is freed. If the request
         is still queued, mark it so the dispatch loop drops it instead of dispatching it."""
+        self._retry_ids.discard(req.id)          # a client that left is never retried
         t = self._streams.get(req.id)
         if t and not t.done():
             t.cancel()
         elif req.state == RequestState.QUEUED:
             req.state = RequestState.FAILED
+
+    async def _on_replica_dead(self, replica: Replica) -> None:
+        """HealthMonitor callback: stop the streams still running on a dead replica (they may
+        hang, e.g. a frozen container) so they are requeued at the front and retried."""
+        victims = [r for r in self._inflight.values() if r.replica_id == replica.id]
+        for req in victims:
+            t = self._streams.get(req.id)
+            if t and not t.done():
+                self._retry_ids.add(req.id)
+                t.cancel()
+        self.log.health("requeueing in-flight requests of dead replica", replica=replica.id,
+                        requests=",".join(str(r.id) for r in victims) or "none")
 
     async def _dispatch_loop(self) -> None:
         while True:
@@ -137,6 +171,7 @@ class Gateway:
                     break
                 if req.state == RequestState.FAILED:      # client disconnected while queued
                     self.log.sched("dropped (client disconnected while queued)", req=req.id)
+                    self._progress.pop(req.id, None)
                     continue
                 # load snapshot BEFORE the decision, so the log shows why it was made
                 loads = ",".join(f"{r.id}:{r.in_flight}/{r.max_slots}" for r in self.pool.ready())
@@ -156,18 +191,58 @@ class Gateway:
             extra["session"] = req.session_id
         if getattr(self.router, "last_decision", None):
             extra["affinity"] = self.router.last_decision
+        if req.attempts > 1:
+            extra["attempt"] = req.attempts
         self.log.route("dispatch", req=req.id, replica=replica.id, policy=self.cfg.router,
                        loads_before=loads, in_flight=replica.in_flight, **extra)
+        self._inflight[req.id] = req
+        self._retry_ids.discard(req.id)          # a stale mark from an earlier attempt must not linger
+        self._progress.setdefault(req.id, _Progress())
         t = asyncio.create_task(self._stream(req, replica))
         self._streams[req.id] = t
 
     async def _stream(self, req: Request, replica: Replica) -> None:
+        """One attempt of one request on one replica. On a retry (attempts > 1) the first
+        len(prog.texts) content chunks are what the client already has: they are held back
+        and compared with the regenerated ones (assumption #6) instead of being sent again."""
         assert self._client
+        prog = self._progress.setdefault(req.id, _Progress())
         payload = {"messages": req.messages, "max_tokens": req.max_tokens,
                    "temperature": self.cfg.default_temperature, "stream": True}
         t0 = time.monotonic()
         ttft: Optional[float] = None
-        reply: list[str] = []
+        resume_at = len(prog.texts) if req.attempts > 1 else 0
+        verifying = resume_at > 0
+        held: list[str] = []          # this attempt's chunks while checking the prefix
+        matched = 0
+        requeued = False
+
+        async def forward(data: str) -> None:
+            nonlocal ttft
+            c = _content_of(data)
+            if not c and req.attempts > 1 and prog.forwarded_any and _is_role_chunk(data):
+                return                # the client already got the opening chunk
+            if c:
+                prog.texts.append(c)
+                req.tokens_emitted = len(prog.texts)
+                if ttft is None:
+                    ttft = time.monotonic() - t0
+            prog.forwarded_any = True
+            await req.out.put(f"data: {data}\n\n")
+
+        async def restart_output(at_token: int) -> None:
+            nonlocal verifying
+            verifying = False
+            self.log.route("retry output differs, client told to restart", req=req.id, replica=replica.id,
+                           at_token=at_token, already_sent=len(prog.texts))
+            await req.out.put("data: " + json.dumps({"llmgw_retry": {
+                "reason": "regenerated output differs from what was sent",
+                "discard_previous_output": True}}) + "\n\n")
+            prog.texts.clear()
+            req.tokens_emitted = 0
+            for h in held:
+                await forward(h)
+
         try:
             async with self._client.stream("POST", f"{replica.base_url}/v1/chat/completions",
                                            json=payload) as resp:
@@ -180,37 +255,70 @@ class Gateway:
                     data = line[5:].strip()
                     if data == "[DONE]":
                         break
-                    content = _content_of(data)
-                    if content:
-                        req.tokens_emitted += 1
-                        reply.append(content)
-                        if ttft is None:
-                            ttft = time.monotonic() - t0
-                    await req.out.put(f"data: {data}\n\n")
+                    if verifying:
+                        held.append(data)
+                        c = _content_of(data)
+                        if c:
+                            if c != prog.texts[matched]:
+                                await restart_output(matched)
+                                continue
+                            matched += 1
+                            if matched == resume_at:
+                                verifying = False
+                                self.log.route("retry resumed", req=req.id, replica=replica.id,
+                                               skipped_tokens=resume_at, prefix_matched="yes")
+                        continue
+                    await forward(data)
+            if verifying:             # regenerated output ended before the resume point
+                await restart_output(matched)
             req.state = RequestState.DONE
             if req.session_id is not None:     # only a completed turn enters the history
-                self.sessions[req.session_id] = req.messages + [{"role": "assistant", "content": "".join(reply)}]
+                self.sessions[req.session_id] = req.messages + [
+                    {"role": "assistant", "content": "".join(prog.texts)}]
             self.router.on_complete(req, replica)
             self.log.route("complete", req=req.id, replica=replica.id, tokens=req.tokens_emitted,
-                           ttft_s=f"{ttft:.3f}" if ttft is not None else "na",
+                           attempts=req.attempts, ttft_s=f"{ttft:.3f}" if ttft is not None else "na",
                            total_s=f"{time.monotonic() - t0:.3f}")
         except asyncio.CancelledError:
-            req.state = RequestState.FAILED
-            self.log.route("cancelled (client disconnected)", req=req.id, replica=replica.id,
-                           tokens=req.tokens_emitted)
-            raise
+            if req.id not in self._retry_ids:
+                req.state = RequestState.FAILED
+                self.log.route("cancelled (client disconnected)", req=req.id, replica=replica.id,
+                               tokens=req.tokens_emitted)
+                raise
+            # cancelled by _on_replica_dead: requeue instead of failing
+            self._retry_ids.discard(req.id)
+            requeued = await self._retry_or_fail(req, replica, "replica_dead")
         except (httpx.HTTPError, ReplicaHTTPError) as e:
-            # No retry before Phase 5: report the error to the client and end the stream.
-            req.state = RequestState.FAILED
-            self.log.route("stream failed, no retry before phase 5", req=req.id, replica=replica.id,
-                           tokens=req.tokens_emitted, error=type(e).__name__)
-            err = {"error": {"message": f"replica {replica.id} failed: {e}", "type": "replica_error"}}
-            await req.out.put(f"data: {json.dumps(err)}\n\n")
+            if isinstance(e, httpx.TransportError) and self.health is not None:
+                # decision 9: a stream connection error marks the replica DEAD
+                self._inflight.pop(req.id, None)       # this task handles its own retry
+                self._spawn(self.health.mark_dead(replica, reason="stream_error"))
+            requeued = await self._retry_or_fail(req, replica, type(e).__name__)
         finally:
             replica.in_flight -= 1
             self._streams.pop(req.id, None)
-            req.out.put_nowait(None)
+            self._inflight.pop(req.id, None)
+            if not requeued:
+                self._progress.pop(req.id, None)
+                req.out.put_nowait(None)
             self._wake.set()
+
+    async def _retry_or_fail(self, req: Request, replica: Replica, reason: str) -> bool:
+        """Decision 6: back to the FRONT of the queue, at most cfg.max_retries times."""
+        sent = len(self._progress.get(req.id, _Progress()).texts)
+        if req.attempts <= self.cfg.max_retries:
+            req.state = RequestState.QUEUED
+            self.log.route("stream failed, retrying", req=req.id, replica=replica.id, reason=reason,
+                           attempt=f"{req.attempts}/{self.cfg.max_retries + 1}", tokens_sent=sent)
+            self.scheduler.requeue_front(req)
+            return True
+        req.state = RequestState.FAILED
+        self.log.route("stream failed, retries exhausted", req=req.id, replica=replica.id, reason=reason,
+                       attempts=req.attempts, tokens_sent=sent)
+        err = {"error": {"message": f"replica {replica.id} failed ({reason}) after {req.attempts} attempt(s)",
+                         "type": "replica_error"}}
+        await req.out.put(f"data: {json.dumps(err)}\n\n")
+        return False
 
 
 def _content_of(data: str) -> str:
@@ -221,6 +329,14 @@ def _content_of(data: str) -> str:
         return (choices[0].get("delta") or {}).get("content") or ""
     except (ValueError, AttributeError):
         return ""
+
+
+def _is_role_chunk(data: str) -> bool:
+    try:
+        choices = json.loads(data).get("choices") or []
+        return bool(choices) and "role" in (choices[0].get("delta") or {})
+    except (ValueError, AttributeError):
+        return False
 
 
 # --------------------------------------------------------------------------- #

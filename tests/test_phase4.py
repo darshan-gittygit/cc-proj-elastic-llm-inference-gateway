@@ -116,7 +116,8 @@ class MockReplica:
 def run_turns(turns: list[tuple[str | None, str]], fail_turn: int | None = None):
     """Sends each (session_id, text) turn through Gateway.new_request -> dispatch -> stream."""
     from gateway.main import Gateway
-    cfg = Config(router="session_affinity", scheduler="fcfs", slots_per_replica=2)
+    # max_retries=0: a failed turn must stay failed here (retries are Phase 5, tested there)
+    cfg = Config(router="session_affinity", scheduler="fcfs", slots_per_replica=2, max_retries=0)
     gw = Gateway(cfg, EventLog("test-history"))
     gw.pool.add(Replica(id="r1", container_id="r1", host="mock", port=1, state=R, max_slots=2))
     mock = MockReplica()

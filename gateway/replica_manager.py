@@ -46,6 +46,7 @@ class DockerReplicaManager(ReplicaManager):
         self._http = httpx.AsyncClient(timeout=2.0)
         self._ids = itertools.count(1)
         self._tasks: set[asyncio.Task] = set()
+        self._creating: set[asyncio.Future] = set()     # docker run calls still in their thread
 
     # ---- setup / teardown ------------------------------------------------
     async def setup(self) -> None:
@@ -55,11 +56,18 @@ class DockerReplicaManager(ReplicaManager):
             self.log.scale("removed leftover container", container=name)
 
     async def shutdown(self) -> None:
-        """Gateway exit: remove every replica container (no draining)."""
+        """Gateway exit: remove every replica container (no draining). A start_replica() that
+        was cancelled mid-way (e.g. a replacement being started at exit) still has its
+        `docker run` in a thread; wait for it, then also remove anything with our label and
+        prefix that never made it into the pool."""
         for t in list(self._tasks):
             t.cancel()
+        if self._creating:
+            await asyncio.gather(*self._creating, return_exceptions=True)
         for r in self.pool.all():
             await self.kill_and_remove(r, reason="gateway shutdown")
+        for name in await asyncio.to_thread(self._remove_leftovers):
+            self.log.scale("removed container that never joined the pool", container=name)
         await self._http.aclose()
 
     def _ensure_network(self) -> None:
@@ -83,7 +91,10 @@ class DockerReplicaManager(ReplicaManager):
         rid = f"r{next(self._ids)}"
         name = f"{self.cfg.container_prefix}{rid}"
         t0 = time.monotonic()
-        container = await asyncio.to_thread(self._run_container, name)
+        create = asyncio.ensure_future(asyncio.to_thread(self._run_container, name))
+        self._creating.add(create)
+        create.add_done_callback(self._creating.discard)
+        container = await asyncio.shield(create)     # cancelling us must not lose track of it
         ip = await asyncio.to_thread(self._container_ip, container)
         r = Replica(id=rid, container_id=container.id, host=ip, port=REPLICA_PORT,
                     state=ReplicaState.STARTING, max_slots=self.cfg.slots_per_replica, created_ts=t0)

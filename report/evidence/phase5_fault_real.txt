@@ -1,0 +1,94 @@
+# REAL MODEL RESULT (llama.cpp containers, real model)
+# Phase 5 / demo 4: replica failure while busy (docker kill, docker pause), retry and replacement
+# Run: 2026-11-10T14:02:52+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# 2 replicas x 2 slots, 4 concurrent clients, max_tokens=48, fault injected 15s after the clients start.
+# config: health_interval_s=1.5 health_fail_limit=3 max_retries=2
+
+################ run kill (docker kill r1 while busy) ################
+== timeline (monotonic, seconds after the fault) ==
+  r1 declared DEAD:       +0.66 s  (reason=stream_error)
+  replacement r3 READY:   +2.97 s  (its own load time 2.07 s)
+== per client ==
+  client  req   replicas resumed_after restarted tokens same_as_reference
+       0    1      r1>r3            22        no     43               yes
+       1    2         r2             -        no     44               yes
+       2    3      r1>r3            21        no     36                NO
+       3    4         r2             -        no     41               yes
+== gateway log: HEALTH / SCALE / ROUTE (retry, fail, complete) ==
+  2026-11-10 14:03:30.215 mono=720.474 INFO gateway [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+  2026-11-10 14:03:30.505 mono=720.764 INFO gateway [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+  2026-11-10 14:03:31.354 mono=721.612 INFO gateway [HEALTH] replica ready replica=r1 state=ready load_s=1.46
+  2026-11-10 14:03:31.656 mono=721.915 INFO gateway [HEALTH] replica ready replica=r2 state=ready load_s=1.44
+  2026-11-10 14:03:48.160 mono=738.419 INFO gateway [ROUTE] stream failed, retrying req=3 replica=r1 reason=RemoteProtocolError attempt=1/3 tokens_sent=21
+  2026-11-10 14:03:48.162 mono=738.421 INFO gateway [ROUTE] stream failed, retrying req=1 replica=r1 reason=RemoteProtocolError attempt=1/3 tokens_sent=22
+  2026-11-10 14:03:48.163 mono=738.421 INFO gateway [HEALTH] replica DEAD replica=r1 reason=stream_error was=ready in_flight=0
+  2026-11-10 14:03:48.163 mono=738.421 INFO gateway [HEALTH] requeueing in-flight requests of dead replica replica=r1 requests=none
+  2026-11-10 14:03:48.404 mono=738.662 INFO gateway [SCALE] replica removed replica=r1 reason=dead
+  2026-11-10 14:03:48.778 mono=739.037 INFO gateway [SCALE] replica started replica=r3 container=llmgw-replica-r3 ip=172.18.0.2 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+  2026-11-10 14:03:48.778 mono=739.037 INFO gateway [HEALTH] replacement started replica=r3 replacing=r1
+  2026-11-10 14:03:50.476 mono=740.735 INFO gateway [HEALTH] replica ready replica=r3 state=ready load_s=2.07
+  2026-11-10 14:03:50.476 mono=740.735 INFO gateway [ROUTE] dispatch req=1 replica=r3 policy=least_busy loads_before=r2:2/2,r3:0/2 in_flight=1 attempt=2
+  2026-11-10 14:03:50.477 mono=740.735 INFO gateway [ROUTE] dispatch req=3 replica=r3 policy=least_busy loads_before=r2:2/2,r3:1/2 in_flight=2 attempt=2
+  2026-11-10 14:03:59.483 mono=751.928 INFO gateway [ROUTE] complete req=2 replica=r2 tokens=48 attempts=1 ttft_s=3.783 total_s=29.494
+  2026-11-10 14:03:59.983 mono=752.428 INFO gateway [ROUTE] complete req=4 replica=r2 tokens=48 attempts=1 ttft_s=7.179 total_s=29.787
+  2026-11-10 14:04:05.780 mono=758.225 INFO gateway [ROUTE] retry resumed req=3 replica=r3 skipped_tokens=21 prefix_matched=yes
+  2026-11-10 14:04:06.275 mono=758.720 INFO gateway [ROUTE] retry resumed req=1 replica=r3 skipped_tokens=22 prefix_matched=yes
+  2026-11-10 14:04:14.682 mono=767.127 INFO gateway [ROUTE] complete req=3 replica=r3 tokens=48 attempts=2 ttft_s=17.983 total_s=26.390
+  2026-11-10 14:04:14.684 mono=767.129 INFO gateway [ROUTE] complete req=1 replica=r3 tokens=48 attempts=2 ttft_s=18.289 total_s=26.393
+  2026-11-10 14:04:15.141 mono=767.586 INFO gateway [SCALE] replica removed replica=r2 reason=gateway_shutdown
+  2026-11-10 14:04:15.516 mono=767.961 INFO gateway [SCALE] replica removed replica=r3 reason=gateway_shutdown
+== checks ==
+PASS: HEALTH declared r1 DEAD (reason=stream_error)
+PASS: every client got [DONE], no error, non-empty output
+PASS: the requests that were on r1 were retried on another replica (2 retried)
+PASS: replacement r3 was started and reached READY
+PASS: all replica containers removed after gateway exit
+== assumption #6 (greedy decoding regenerates the same tokens) ==
+  gateway prefix check: matched for 2 retried request(s), differed for 0
+  final text equals the fault-free reference for 3/4 clients
+
+################ run pause (docker pause r1 while busy) ################
+== timeline (monotonic, seconds after the fault) ==
+  r1 declared DEAD:       +7.55 s  (reason=health_checks)
+  replacement r3 READY:   +9.84 s  (its own load time 1.94 s)
+== per client ==
+  client  req   replicas resumed_after restarted tokens same_as_reference
+       0    1      r1>r2            27        no     43               yes
+       1    2         r2             -        no     44               yes
+       2    3      r1>r2            26        no     38                NO
+       3    4         r2             -        no     41               yes
+== gateway log: HEALTH / SCALE / ROUTE (retry, fail, complete) ==
+  2026-11-10 14:04:17.122 mono=769.567 INFO gateway [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+  2026-11-10 14:04:17.437 mono=769.883 INFO gateway [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+  2026-11-10 14:04:18.781 mono=771.226 INFO gateway [HEALTH] replica ready replica=r1 state=ready load_s=2.00
+  2026-11-10 14:04:19.065 mono=771.510 INFO gateway [HEALTH] replica ready replica=r2 state=ready load_s=1.94
+  2026-11-10 14:04:35.420 mono=789.965 INFO gateway [HEALTH] probe failed replica=r1 failures=1/3
+  2026-11-10 14:04:37.938 mono=792.482 INFO gateway [HEALTH] probe failed replica=r1 failures=2/3
+  2026-11-10 14:04:40.452 mono=794.997 INFO gateway [HEALTH] probe failed replica=r1 failures=3/3
+  2026-11-10 14:04:40.453 mono=794.997 INFO gateway [HEALTH] replica DEAD replica=r1 reason=health_checks was=ready in_flight=2
+  2026-11-10 14:04:40.453 mono=794.997 INFO gateway [HEALTH] requeueing in-flight requests of dead replica replica=r1 requests=1,3
+  2026-11-10 14:04:40.462 mono=795.006 INFO gateway [ROUTE] stream failed, retrying req=1 replica=r1 reason=replica_dead attempt=1/3 tokens_sent=27
+  2026-11-10 14:04:40.468 mono=795.013 INFO gateway [ROUTE] stream failed, retrying req=3 replica=r1 reason=replica_dead attempt=1/3 tokens_sent=26
+  2026-11-10 14:04:40.758 mono=795.302 INFO gateway [ROUTE] complete req=2 replica=r2 tokens=48 attempts=1 ttft_s=2.991 total_s=23.196
+  2026-11-10 14:04:40.759 mono=795.303 INFO gateway [ROUTE] dispatch req=3 replica=r2 policy=least_busy loads_before=r2:1/2 in_flight=2 attempt=2
+  2026-11-10 14:04:40.798 mono=795.342 INFO gateway [SCALE] replica removed replica=r1 reason=dead
+  2026-11-10 14:04:41.058 mono=795.602 INFO gateway [ROUTE] complete req=4 replica=r2 tokens=48 attempts=1 ttft_s=5.576 total_s=23.280
+  2026-11-10 14:04:41.060 mono=795.605 INFO gateway [ROUTE] dispatch req=1 replica=r2 policy=least_busy loads_before=r2:1/2 in_flight=2 attempt=2
+  2026-11-10 14:04:41.172 mono=795.716 INFO gateway [SCALE] replica started replica=r3 container=llmgw-replica-r3 ip=172.18.0.2 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+  2026-11-10 14:04:41.172 mono=795.716 INFO gateway [HEALTH] replacement started replica=r3 replacing=r1
+  2026-11-10 14:04:42.742 mono=797.287 INFO gateway [HEALTH] replica ready replica=r3 state=ready load_s=1.94
+  2026-11-10 14:04:50.494 mono=807.201 INFO gateway [ROUTE] retry resumed req=3 replica=r2 skipped_tokens=26 prefix_matched=yes
+  2026-11-10 14:04:51.390 mono=808.097 INFO gateway [ROUTE] retry resumed req=1 replica=r2 skipped_tokens=27 prefix_matched=yes
+  2026-11-10 14:04:59.503 mono=816.210 INFO gateway [ROUTE] complete req=3 replica=r2 tokens=48 attempts=2 ttft_s=12.400 total_s=20.906
+  2026-11-10 14:04:59.893 mono=816.600 INFO gateway [ROUTE] complete req=1 replica=r2 tokens=48 attempts=2 ttft_s=12.795 total_s=20.994
+  2026-11-10 14:05:00.372 mono=817.079 INFO gateway [SCALE] replica removed replica=r2 reason=gateway_shutdown
+  2026-11-10 14:05:00.652 mono=817.359 INFO gateway [SCALE] replica removed replica=r3 reason=gateway_shutdown
+== checks ==
+PASS: HEALTH declared r1 DEAD (reason=health_checks)
+PASS: every client got [DONE], no error, non-empty output
+PASS: the requests that were on r1 were retried on another replica (2 retried)
+PASS: replacement r3 was started and reached READY
+PASS: all replica containers removed after gateway exit
+== assumption #6 (greedy decoding regenerates the same tokens) ==
+  gateway prefix check: matched for 2 retried request(s), differed for 0
+  final text equals the fault-free reference for 3/4 clients

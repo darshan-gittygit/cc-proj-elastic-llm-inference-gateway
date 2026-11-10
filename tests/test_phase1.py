@@ -80,14 +80,15 @@ def test_requests_wait_in_gateway_until_slot_free(tmp_path):
 
 
 def test_replica_failure_ends_stream_with_error(tmp_path, docker_client):
-    """No retry before Phase 5, but the client must get an error and a closed stream, not a hang."""
-    gw = GatewayProc(tmp_path)
+    """When no retry is left (max_retries: 0; retries are Phase 5), the client must get an
+    error and a closed stream, not a hang."""
+    gw = GatewayProc(tmp_path, max_retries=0)
     try:
         docker_client.containers.get(f"{TEST_PREFIX}r1").remove(force=True)
         events, _ = stream_request(gw.url, max_tokens=5)
         assert events[-1] == "[DONE]"
         assert json.loads(events[0])["error"]["type"] == "replica_error"
-        assert "stream failed, no retry before phase 5" in gw.log()
+        assert "stream failed, retries exhausted" in gw.log()
     finally:
         gw.stop()
 
