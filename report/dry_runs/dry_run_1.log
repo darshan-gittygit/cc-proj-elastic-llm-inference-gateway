@@ -1,0 +1,166 @@
+==================================================================
+ run_all_demos.sh  mode=real  REAL MODEL
+ started 2026-11-10T17:20:53+00:00 | host Linux 6.6.87.2-microsoft-standard-WSL2 | python Python 3.12.3 | docker 29.1.3
+ source /home/darshan/llmgw-wsl-test-copy  ->  isolated copy /tmp/llmgw-demos.HK1zlq/project
+==================================================================
+
+------------------------------------------------------------------
+ [phase1_stream_check] start 2026-11-10T17:20:53+00:00
+------------------------------------------------------------------
+   PASS: stream ended with [DONE]
+   PASS: more than one chunk arrived over time
+   PASS: no error event
+   PASS: gateway logged dispatch to r1
+   PASS: gateway logged complete
+   PASS: replica container removed at exit
+ [phase1_stream_check] phase1_stream_check      PASS exit=0   checks:   6 PASS   0 FAIL        9 s
+
+------------------------------------------------------------------
+ [phase2_routing_check] start 2026-11-10T17:21:02+00:00
+------------------------------------------------------------------
+   PASS: 3 replicas reached READY
+   PASS: 3 containers running during the test
+   PASS: every container has NanoCpus=1000000000
+   PASS: every container has Memory=1073741824
+   PASS: 10 dispatch decisions logged with policy=round_robin
+   PASS: 10 requests completed ([ROUTE] complete)
+   PASS: all 10 clients got [DONE] and no error
+   PASS: all 3 containers removed after gateway exit
+   PASS: 3 replicas reached READY
+   PASS: 3 containers running during the test
+   PASS: every container has NanoCpus=1000000000
+   PASS: every container has Memory=1073741824
+   PASS: 10 dispatch decisions logged with policy=least_busy
+   PASS: 10 requests completed ([ROUTE] complete)
+   PASS: all 10 clients got [DONE] and no error
+   PASS: all 3 containers removed after gateway exit
+ [phase2_routing_check] phase2_routing_check     PASS exit=0   checks:  16 PASS   0 FAIL       35 s
+
+------------------------------------------------------------------
+ [demo1_scheduling] start 2026-11-10T17:21:37+00:00
+------------------------------------------------------------------
+   PASS: all 6 clients got [DONE] and no error (6/6)
+   PASS: every request was selected exactly once
+   PASS: replica container removed after gateway exit
+   PASS: fcfs: service order equals arrival order
+   PASS: all 6 clients got [DONE] and no error (6/6)
+   PASS: every request was selected exactly once
+   PASS: replica container removed after gateway exit
+   PASS: spf_aging: all short requests served before the long one
+   PASS: all 18 clients got [DONE] and no error (18/18)
+   PASS: every request was selected exactly once
+   PASS: replica container removed after gateway exit
+   PASS: aging: L was served while short requests were still waiting
+   PASS: aging: every short served before L arrived within the bound after L
+   PASS: all 18 clients got [DONE] and no error (18/18)
+   PASS: every request was selected exactly once
+   PASS: replica container removed after gateway exit
+   PASS: no aging: L served only after every short request (starved while shorts kept coming)
+ [demo1_scheduling] demo1_scheduling         PASS exit=0   checks:  17 PASS   0 FAIL      141 s
+
+------------------------------------------------------------------
+ [demo2_affinity] start 2026-11-10T17:23:51+00:00
+------------------------------------------------------------------
+   PASS: affinity-c1: 5 turns dispatched
+   PASS: affinity-c1: all 5 turns on the same replica (r1)
+   PASS: affinity-c1: affinity decisions new, hit x4
+   PASS: affinity-c1: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+   PASS: affinity-c2: 5 turns dispatched
+   PASS: affinity-c2: all 5 turns on the same replica (r1)
+   PASS: affinity-c2: affinity decisions new, hit x4
+   PASS: affinity-c2: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+   PASS: affinity-c3: 5 turns dispatched
+   PASS: affinity-c3: all 5 turns on the same replica (r1)
+   PASS: affinity-c3: affinity decisions new, hit x4
+   PASS: affinity-c3: history replayed (total prompt tokens grow every turn: [43, 65, 88, 112, 135])
+   PASS: all requests got [DONE] and no error
+   PASS: replica containers removed after gateway exit
+   PASS: baseline-c1: 5 turns dispatched
+   PASS: baseline-c1: turn 2 went to a different replica than turn 1
+   PASS: baseline-c1: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+   PASS: baseline-c2: 5 turns dispatched
+   PASS: baseline-c2: turn 2 went to a different replica than turn 1
+   PASS: baseline-c2: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+   PASS: baseline-c3: 5 turns dispatched
+   PASS: baseline-c3: turn 2 went to a different replica than turn 1
+   PASS: baseline-c3: history replayed (total prompt tokens grow every turn: [43, 65, 88, 112, 135])
+   PASS: all requests got [DONE] and no error
+   PASS: replica containers removed after gateway exit
+ [demo2_affinity] demo2_affinity           PASS exit=0   checks:  25 PASS   0 FAIL      113 s
+
+------------------------------------------------------------------
+ [demo4_fault] start 2026-11-10T17:25:38+00:00
+------------------------------------------------------------------
+   PASS: HEALTH declared r1 DEAD (reason=stream_error)
+   PASS: every client got [DONE], no error, non-empty output
+   PASS: the requests that were on r1 were retried on another replica (2 retried)
+   PASS: replacement r3 was started and reached READY
+   PASS: all replica containers removed after gateway exit
+   PASS: HEALTH declared r1 DEAD (reason=health_checks)
+   PASS: every client got [DONE], no error, non-empty output
+   PASS: the requests that were on r1 were retried on another replica (2 retried)
+   PASS: replacement r3 was started and reached READY
+   PASS: all replica containers removed after gateway exit
+ [demo4_fault] demo4_fault              PASS exit=0   checks:  10 PASS   0 FAIL      137 s
+
+------------------------------------------------------------------
+ [phase6_autoscale_check] start 2026-11-10T17:27:45+00:00
+------------------------------------------------------------------
+   PASS: run lasted at least 120 s (189 s of autoscaler ticks)
+   PASS: all 14 burst clients got [DONE] and no error (14/14)
+   PASS: burst triggered SCALE up (2x, first at 15.5 s)
+   PASS: idle triggered drain + SCALE down (2x, all after the burst)
+   PASS: no flapping: all scale-ups come before all scale-downs (1 direction change)
+   PASS: back to min_replicas=1 READY at the end (ready=1)
+   PASS: never more than max_replicas=3 containers
+   PASS: no request was dispatched to a replica before it was READY or promoted
+   PASS: all replica containers removed after gateway exit
+ [phase6_autoscale_check] phase6_autoscale_check   PASS exit=0   checks:   9 PASS   0 FAIL      191 s
+
+------------------------------------------------------------------
+ [demo3_prewarm] start 2026-11-10T17:30:44+00:00
+------------------------------------------------------------------
+   PASS: [none] all 14 clients got [DONE] and no error (14/14)
+   PASS: [none] the burst triggered a scale-up
+   PASS: [none] first scale-up was start_new
+   PASS: [none] no spare was ever started
+   PASS: [none] no request dispatched to a replica before it was READY or promoted
+   PASS: [none] all replica containers removed after gateway exit
+   PASS: [warm_pool] all 14 clients got [DONE] and no error (14/14)
+   PASS: [warm_pool] the burst triggered a scale-up
+   PASS: [warm_pool] first scale-up was promote_spare
+   PASS: [warm_pool] the promoted spare was loaded before the burst started
+   PASS: [warm_pool] no request dispatched to a replica before it was READY or promoted
+   PASS: [warm_pool] all replica containers removed after gateway exit
+   PASS: [both] config keys differing between runs are exactly ['prewarm']
+ [demo3_prewarm] demo3_prewarm            PASS exit=0   checks:  13 PASS   0 FAIL      163 s
+
+------------------------------------------------------------------
+ [demo5_config] start 2026-11-10T17:33:17+00:00
+------------------------------------------------------------------
+   PASS: same gateway process for the whole demo (pid 8487)
+   PASS: no restart: the 2 initial replicas were started once and never again
+   PASS: all requests in both stages completed
+   PASS: reload 1 accepted (HTTP 200) and changed scheduler, router and prewarm
+   PASS: scheduler: stage A fcfs served L first (L1), stage B spf_aging served L last (L1)
+   PASS: router: stage A round_robin alternated ['r2', 'r1', 'r2', 'r1'], stage B session_affinity kept one replica ['r1', 'r1', 'r1', 'r1']
+   PASS: prewarm: no spare under none (stage A: 0), a spare loaded after switching to warm_pool
+   PASS: reload 2 (invalid router) rejected with HTTP 400 and logged
+   PASS: after the rejected reload the old values stayed (policy=session_affinity, replica r1 = stage B's)
+   PASS: reload 3 (prewarm none) accepted and the spare was stopped
+   PASS: all replica containers removed after gateway exit
+ [demo5_config] demo5_config             PASS exit=0   checks:  11 PASS   0 FAIL       78 s
+
+==================================================================
+ SUMMARY  mode=real  finished 2026-11-10T17:34:31+00:00
+   phase1_stream_check      PASS exit=0   checks:   6 PASS   0 FAIL        9 s
+   phase2_routing_check     PASS exit=0   checks:  16 PASS   0 FAIL       35 s
+   demo1_scheduling         PASS exit=0   checks:  17 PASS   0 FAIL      141 s
+   demo2_affinity           PASS exit=0   checks:  25 PASS   0 FAIL      113 s
+   demo4_fault              PASS exit=0   checks:  10 PASS   0 FAIL      137 s
+   phase6_autoscale_check   PASS exit=0   checks:   9 PASS   0 FAIL      191 s
+   demo3_prewarm            PASS exit=0   checks:  13 PASS   0 FAIL      163 s
+   demo5_config             PASS exit=0   checks:  11 PASS   0 FAIL       78 s
+   gateway containers left after the run: none
+ RESULT: ALL DEMOS PASSED
+==================================================================

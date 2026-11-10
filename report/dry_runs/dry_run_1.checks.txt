@@ -1,0 +1,18 @@
+== clean setup: sync the WSL copy from the Windows source (incl. evidence)
+SYNC OK: 73 files identical to Windows source
+== before dry run 1 (2026-11-10T17:20:51+00:00)
+gateway containers: 0
+gateway/test/load processes: 0
+port 8000: free
+temporary demo copies (/tmp/llmgw-demos.*): 0
+evidence in Windows repo (sha256 of all files): 87b048a0fd824bca
+evidence in WSL copy     (sha256 of all files): 87b048a0fd824bca
+== command: cd /home/darshan/llmgw-wsl-test-copy && source ~/llmgw-venv/bin/activate && bash scripts/run_all_demos.sh real
+== runner exit code: 0
+== after dry run 1 (2026-11-10T17:34:31+00:00)
+gateway containers: 0
+gateway/test/load processes: 0
+port 8000: free
+temporary demo copies (/tmp/llmgw-demos.*): 0
+evidence in Windows repo (sha256 of all files): 87b048a0fd824bca
+evidence in WSL copy     (sha256 of all files): 87b048a0fd824bca
