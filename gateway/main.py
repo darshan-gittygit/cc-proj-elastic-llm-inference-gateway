@@ -25,8 +25,10 @@ Implemented so far:
              stopped: the regenerated tokens it already has are compared with what it got
              (assumption #6, greedy decoding) and skipped. If they differ, the client gets
              a {"llmgw_retry": ...} event and the output restarts from the beginning.
+  - Phase 6: LoadAutoscaler (gateway/autoscaler.py) scales between min_replicas and
+             max_replicas and keeps the warm pool (decisions 7, 8)
 Deliberately NOT here yet (each belongs to its own later phase):
-  - autoscaler, warm pool                     -> Phase 6 / 7
+  - prewarm none vs warm_pool measurement     -> Phase 7 (demo 3)
   - POST /admin/reload                        -> Phase 8
 
 Run (from the project root, on the Linux host that runs Docker):
@@ -51,6 +53,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 import gateway.router     # noqa: F401  (registers round_robin / least_busy)
 import gateway.scheduler  # noqa: F401  (registers fcfs / spf_aging)
+from gateway.autoscaler import LoadAutoscaler
 from gateway.health import ProbeHealthMonitor
 from gateway.interfaces import (Config, EventLog, HealthMonitor, Replica, ReplicaPool, Request,
                                 RequestState, Scheduler, build_router, build_scheduler)
@@ -87,6 +90,7 @@ class Gateway:
         self.router = build_router(cfg, log)
         self.manager: Optional[DockerReplicaManager] = None
         self.health: Optional[HealthMonitor] = None
+        self.autoscaler: Optional[LoadAutoscaler] = None
         self._wake = asyncio.Event()
         self._client: Optional[httpx.AsyncClient] = None
         self._background: set[asyncio.Task] = set()
@@ -110,6 +114,8 @@ class Gateway:
         self._spawn(self._dispatch_loop())
         for _ in range(self.cfg.min_replicas):
             await self.manager.start_replica()
+        self.autoscaler = LoadAutoscaler(self.cfg, self.pool, self.scheduler, self.manager, self.log)
+        self._spawn(self.autoscaler.run())
 
     async def stop(self) -> None:
         tasks = list(self._background) + list(self._streams.values())

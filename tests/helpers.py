@@ -59,13 +59,18 @@ def make_test_config(tmp: Path, **overrides) -> dict:
 
 
 class GatewayProc:
-    """Runs `uvicorn gateway.main:app` with a test config; waits until `n_ready` replicas are READY."""
+    """Runs `uvicorn gateway.main:app` with a test config; waits until `n_ready` replicas are READY.
+
+    By default the pool is fixed at n_ready replicas (max_replicas = min_replicas, prewarm: none),
+    so the Phase 1-5 tests see the conditions they were written for; the autoscaler then has no
+    room to act. Phase 6 tests pass their own max_replicas / prewarm / thresholds."""
 
     def __init__(self, tmp: Path, n_ready: int = 1, **overrides):
         self.port = free_port()
         self.logfile = tmp / "gateway.log"
         cfgfile = tmp / "config.yaml"
-        cfgfile.write_text(yaml.safe_dump(make_test_config(tmp, min_replicas=n_ready, **overrides)))
+        settings = {"min_replicas": n_ready, "max_replicas": n_ready, "prewarm": "none", **overrides}
+        cfgfile.write_text(yaml.safe_dump(make_test_config(tmp, **settings)))
         env = dict(os.environ, LLMGW_CONFIG=str(cfgfile), LLMGW_LOG_FILE=str(self.logfile))
         self.proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "gateway.main:app", "--port", str(self.port),
                                       "--log-level", "warning"], cwd=ROOT, env=env)

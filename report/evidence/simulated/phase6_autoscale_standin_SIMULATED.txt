@@ -1,0 +1,79 @@
+# SIMULATED RESULT (stand-in replica containers, no model; timings are NOT model performance)
+# Phase 6 check: autoscaler (burst -> scale up, idle -> drain + scale down, no flapping), 180s run
+# Run: 2026-11-10T14:27:54+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /home/darshan/llmgw-wsl-test-copy
+# Burst: 14 concurrent clients, max_tokens=300
+# config (gateway/config.yaml): min_replicas=1 max_replicas=3 slots_per_replica=2 scale_up_threshold=4.0 scale_down_threshold=1.0 scale_up_after_s=5.0 scale_down_cooldown_s=30.0 prewarm=warm_pool warm_pool_size=1 prewarm_trigger_ratio=0.7 replica_cpus=1.0 replica_memory=1g
+
+== timeline (s since gateway start; burst 10.9 -> 57.3) ==
+      0.0  [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=False
+      2.6  [HEALTH] replica ready replica=r1 state=ready load_s=2.93
+      3.3  [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=True
+      3.3  [SCALE] prewarm spare replica=r2 trigger=idle signal=0.00
+      5.9  [HEALTH] replica ready replica=r2 state=warm load_s=2.86
+     16.4  [SCALE] spare promoted replica=r2
+     16.4  [SCALE] scale up how=promote_spare replica=r2 signal=13.78
+     16.7  [SCALE] replica started replica=r3 container=llmgw-replica-r3 ip=172.18.0.4 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=True
+     16.7  [SCALE] prewarm spare replica=r3 trigger=load signal=13.78
+     19.3  [HEALTH] replica ready replica=r3 state=warm load_s=2.87
+     21.7  [SCALE] spare promoted replica=r3
+     21.7  [SCALE] scale up how=promote_spare replica=r3 signal=7.21
+     26.7  [SCALE] scale up wanted but blocked reason=at_max_replicas=3 signal=4.41
+     83.9  [SCALE] scale down replica=r3 in_flight=0 signal=0.00
+     84.4  [SCALE] replica stopped replica=r3 drained=True in_flight_left=0
+     85.2  [SCALE] replica started replica=r4 container=llmgw-replica-r4 ip=172.18.0.4 image=llmgw-standin:test cpus=1.0 memory=1g slots=2 spare=True
+     85.2  [SCALE] prewarm spare replica=r4 trigger=idle signal=0.00
+     87.8  [HEALTH] replica ready replica=r4 state=warm load_s=2.89
+    114.3  [SCALE] scale down replica=r2 in_flight=0 signal=0.00
+    114.9  [SCALE] replica stopped replica=r2 drained=True in_flight_left=0
+
+== signal samples every 5 s (from [SCALE] signal) ==
+       t  signal queued in_flight ready spares starting total
+     1.0    0.00      0         0     0      0        1     1
+     6.4    0.00      0         0     1      1        0     2
+    11.4    7.00     12         2     1      1        0     2
+    16.4   13.78     12         2     1      1        0     2
+    21.7    7.21     10         4     2      1        0     3
+    26.7    4.41      6         6     3      0        0     3
+    31.7    4.01      6         6     3      0        0     3
+    36.7    3.35      4         6     3      0        0     3
+    41.8    2.69      2         6     3      0        0     3
+    46.8    2.02      0         6     3      0        0     3
+    51.8    1.35      0         4     3      0        0     3
+    56.8    0.69      0         2     3      0        0     3
+    61.8    0.02      0         0     3      0        0     3
+    66.8    0.00      0         0     3      0        0     3
+    71.9    0.00      0         0     3      0        0     3
+    76.9    0.00      0         0     3      0        0     3
+    81.9    0.00      0         0     3      0        0     3
+    87.2    0.00      0         0     2      0        1     3
+    92.3    0.00      0         0     2      1        0     3
+    97.3    0.00      0         0     2      1        0     3
+   102.3    0.00      0         0     2      1        0     3
+   107.3    0.00      0         0     2      1        0     3
+   112.3    0.00      0         0     2      1        0     3
+   117.3    0.00      0         0     1      1        0     2
+   122.4    0.00      0         0     1      1        0     2
+   127.4    0.00      0         0     1      1        0     2
+   132.4    0.00      0         0     1      1        0     2
+   137.4    0.00      0         0     1      1        0     2
+   142.5    0.00      0         0     1      1        0     2
+   147.5    0.00      0         0     1      1        0     2
+   152.5    0.00      0         0     1      1        0     2
+   157.5    0.00      0         0     1      1        0     2
+   162.5    0.00      0         0     1      1        0     2
+   167.6    0.00      0         0     1      1        0     2
+   172.6    0.00      0         0     1      1        0     2
+   177.6    0.00      0         0     1      1        0     2
+   182.6    0.00      0         0     1      1        0     2
+   187.7    0.00      0         0     1      1        0     2
+
+== checks ==
+PASS: run lasted at least 120 s (190 s of autoscaler ticks)
+PASS: all 14 burst clients got [DONE] and no error (14/14)
+PASS: burst triggered SCALE up (2x, first at 16.4 s)
+PASS: idle triggered drain + SCALE down (2x, all after the burst)
+PASS: no flapping: all scale-ups come before all scale-downs (1 direction change)
+PASS: back to min_replicas=1 READY at the end (ready=1)
+PASS: never more than max_replicas=3 containers
+PASS: no request was dispatched to a replica before it was READY or promoted
+PASS: all replica containers removed after gateway exit

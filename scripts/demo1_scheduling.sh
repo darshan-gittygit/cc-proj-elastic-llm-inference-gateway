@@ -50,6 +50,7 @@ run_scenario() {
 import sys, yaml
 cfg = yaml.safe_load(open("gateway/config.yaml"))
 cfg.update(min_replicas=1, slots_per_replica=1, router="least_busy", scheduler=sys.argv[3], aging_alpha=float(sys.argv[4]))
+cfg.update(max_replicas=1, prewarm="none")   # fixed pool: the autoscaler (Phase 6) must not add a replica here
 if sys.argv[2] == "standin":
     cfg["replica_image"] = "llmgw-standin:test"
 yaml.safe_dump(cfg, open(sys.argv[1], "w"))

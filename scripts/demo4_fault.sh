@@ -121,6 +121,7 @@ start_gw() {  # start_gw NAME   (sets GW_PID; runs in the current shell)
 import sys, yaml
 cfg = yaml.safe_load(open("gateway/config.yaml"))
 cfg.update(min_replicas=2, router="least_busy", scheduler="fcfs")
+cfg.update(max_replicas=2, prewarm="none")   # fixed pool: only the HealthMonitor replaces r1 here (no Phase 6 spare)
 if sys.argv[2] == "standin":
     cfg["replica_image"] = "llmgw-standin:test"
 yaml.safe_dump(cfg, open(sys.argv[1], "w"))
