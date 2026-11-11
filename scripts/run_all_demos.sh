@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # run_all_demos.sh - run every phase demo/check, in phase order, with the existing scripts.
 #
-#   scripts/run_all_demos.sh real    [RESULTS_DIR]   # llama.cpp + real model  (~25 min)
+#   scripts/run_all_demos.sh real    [RESULTS_DIR]   # llama.cpp + real model  (~14 min in the Phase 10
+#                                                    # dry runs; demo 3 has since grown by ~1.5 min)
 #   scripts/run_all_demos.sh standin [RESULTS_DIR]   # stand-in image, SIMULATED (~20 min)
 #
 # The mode is required: nothing runs the real model unless "real" is given.

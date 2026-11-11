@@ -1,0 +1,84 @@
+# REAL MODEL RESULT (llama.cpp containers, real model)
+# Phase 4 / demo 2: session affinity vs round robin, 2 replicas, 3 conversations x 5 turns each
+# Run: 2026-11-10T20:36:30+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /tmp/llmgw-day2.runmBl
+# max_tokens per turn: 12. TTFT = gateway-measured time to first token (monotonic).
+
+################ run affinity (router: session_affinity) ################
+== conversation affinity-c1 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    3      r1            new   1.914      24       19    -  'OK'
+     2    4      r1            hit   2.277      44       21    -  'Teal'
+     3    5      r1            hit   1.681      67       21    -  'Teal'
+     4    6      r1            hit   1.876      90       21    -  'Teal'
+     5    7      r1            hit   1.888     113       20    -  'OK'
+== conversation affinity-c2 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    8      r1            new   1.469      28       15    -  'OK'
+     2    9      r1            hit   2.270      44       21    -  'Amber'
+     3   10      r1            hit   2.174      67       21    -  'Amber'
+     4   11      r1            hit   2.187      90       21    -  'Amber'
+     5   12      r1            hit   1.996     113       20    -  'OK'
+== conversation affinity-c3 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1   13      r1            new   1.577      28       15    -  'OK'
+     2   14      r1            hit   2.095      44       21    -  'Violet'
+     3   15      r1            hit   2.189      67       21    -  'Violet Tomato'
+     4   16      r1            hit   2.167      91       21    -  'Violet Rabbit'
+     5   17      r1            hit   1.876     115       20    -  'OK'
+== checks ==
+PASS: affinity-c1: 5 turns dispatched
+PASS: affinity-c1: all 5 turns on the same replica (r1)
+PASS: affinity-c1: affinity decisions new, hit x4
+PASS: affinity-c1: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+PASS: affinity-c2: 5 turns dispatched
+PASS: affinity-c2: all 5 turns on the same replica (r1)
+PASS: affinity-c2: affinity decisions new, hit x4
+PASS: affinity-c2: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+PASS: affinity-c3: 5 turns dispatched
+PASS: affinity-c3: all 5 turns on the same replica (r1)
+PASS: affinity-c3: affinity decisions new, hit x4
+PASS: affinity-c3: history replayed (total prompt tokens grow every turn: [43, 65, 88, 112, 135])
+PASS: all requests got [DONE] and no error
+PASS: replica containers removed after gateway exit
+
+################ run baseline (router: round_robin) ################
+== conversation baseline-c1 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    3      r1              -   2.067      24       19    -  'OK'
+     2    4      r2              -   3.817      24       41    -  'Teal'
+     3    5      r1              -   3.740      44       44    -  'Teal'
+     4    6      r2              -   3.916      67       44    -  'Teal'
+     5    7      r1              -   3.733      90       43    -  'OK'
+== conversation baseline-c2 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1    8      r2              -   1.729      28       15    -  'OK'
+     2    9      r1              -   3.628      28       37    -  'Amber'
+     3   10      r2              -   3.932      44       44    -  'Amber'
+     4   11      r1              -   4.140      67       44    -  'Amber'
+     5   12      r2              -   3.946      90       43    -  'OK'
+== conversation baseline-c3 ==
+  turn  req replica       affinity  ttft_s cache_n prompt_n msgs  reply
+     1   13      r1              -   1.320      28       15    -  'OK'
+     2   14      r2              -   3.246      28       37    -  'Violet'
+     3   15      r1              -   3.829      44       44    -  'Violet Tomato'
+     4   16      r2              -   3.525      67       45    -  'Violet Rabbit'
+     5   17      r1              -   4.340      91       44    -  'OK'
+== checks ==
+PASS: baseline-c1: 5 turns dispatched
+PASS: baseline-c1: turn 2 went to a different replica than turn 1
+PASS: baseline-c1: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+PASS: baseline-c2: 5 turns dispatched
+PASS: baseline-c2: turn 2 went to a different replica than turn 1
+PASS: baseline-c2: history replayed (total prompt tokens grow every turn: [43, 65, 88, 111, 133])
+PASS: baseline-c3: 5 turns dispatched
+PASS: baseline-c3: turn 2 went to a different replica than turn 1
+PASS: baseline-c3: history replayed (total prompt tokens grow every turn: [43, 65, 88, 112, 135])
+PASS: all requests got [DONE] and no error
+PASS: replica containers removed after gateway exit
+
+################ turn-2 TTFT: with vs without affinity ################
+                              c1      c2      c3    mean   cache_n (turn 2)
+        session_affinity   2.277   2.270   2.095   2.214   [44, 44, 44]
+      round_robin (none)   3.817   3.628   3.246   3.564   [24, 28, 28]
+  difference of means (round_robin - affinity): +1.350 s
+  (measured, not assumed: no PASS/FAIL on which is faster)

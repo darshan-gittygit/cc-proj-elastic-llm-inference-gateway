@@ -1,0 +1,14 @@
+# REAL MODEL RESULT (inspection, not a performance measurement)
+# llama.cpp thread count inside one replica container started with the same limits and flags as
+# gateway/replica_manager.py: --cpus 1 --memory 1g, -m <model> -c 4096 -np 2 --cont-batching.
+# Run: 2026-11-11, WSL2 Ubuntu 24.04 (16 logical cores), Docker 29.1.3, ghcr.io/ggml-org/llama.cpp:server.
+# Commands: docker run -d --cpus 1 --memory 1g ... ; docker exec <c> nproc ; docker exec <c> cat /sys/fs/cgroup/cpu.max ;
+#           docker logs <c> | grep threads/n_ctx ; llama-server --help | grep threads ; then docker rm -f.
+nproc inside the container: 1
+cgroup cpu.max: 100000 100000          (CFS quota: 1 CPU)
+llama-server log:  init: llama threadpool init, n_threads = 8
+llama-server log:  load_model: initializing, n_slots = 2, n_ctx_slot = 2048, kv_unified = 'false'
+llama-server --help:  -t, --threads N   number of CPU threads to use during generation (default: -1)
+# Reading: the replica command sets no -t, so llama.cpp picks 8 threads (its default, derived from the
+# host's cores) while the container is limited to 1 CPU of time. The effect of this on throughput or
+# latency was not measured; every experiment ran with the same setting.

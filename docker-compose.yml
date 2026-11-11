@@ -1,0 +1,32 @@
+# Static infrastructure only: the gateway process. Replica containers are NOT Compose services;
+# the gateway still creates, drains and removes them at run time through the Docker Engine API
+# (gateway/replica_manager.py), exactly as when it is started with uvicorn on the host.
+#
+#   cd <project root>                 # must be the project root: ${PWD} is used below
+#   docker compose up -d --build      # gateway on 127.0.0.1:8000, starts min_replicas replicas
+#   docker compose logs -f gateway    # decision log (SCHED / ROUTE / SCALE / HEALTH / CONFIG)
+#   docker compose down               # gateway exits and removes every replica container
+#
+# Why these settings:
+#   docker.sock        the gateway talks to the host's Docker daemon (sibling containers, not
+#                      Docker-in-Docker).
+#   ${PWD}:${PWD}      the project is mounted at the SAME absolute path, so models_dir (./models)
+#                      resolves to a host path the daemon can bind-mount into replicas.
+#   network_mode host  the gateway reaches replicas at their llmgw-net bridge IPs, as on the host;
+#                      the gateway itself creates llmgw-net if missing (not a Compose network).
+#   stop_grace_period  time for the gateway's shutdown to remove its replica containers.
+# Prerequisites: Linux Docker Engine (e.g. WSL2 Ubuntu) with the compose plugin, the model in
+# ./models and the llama.cpp image pulled (scripts/check_feasibility.sh does both).
+services:
+  gateway:
+    build: ./gateway
+    image: llmgw-gateway:local
+    network_mode: host
+    working_dir: ${PWD}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}:${PWD}:ro
+    environment:
+      LLMGW_CONFIG: ${LLMGW_CONFIG:-gateway/config.yaml}
+    command: ["python", "-m", "uvicorn", "gateway.main:app", "--host", "127.0.0.1", "--port", "8000"]
+    stop_grace_period: 60s

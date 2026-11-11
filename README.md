@@ -150,7 +150,18 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 ## 📊 Results
 
 Measured with the real model on one machine (WSL2 Ubuntu 24.04, Docker 29.1.3, each replica 1 CPU / 1 GiB).
-Values are taken from [`report/phase9_measurements.md`](report/phase9_measurements.md).
+
+**Repeated runs** (3 runs each; mean, range in brackets;
+[`report/evidence/repeats/`](report/evidence/repeats/SUMMARY.txt), report section 6.1):
+
+| Experiment | Measurement |
+|---|---|
+| Fixed pool vs autoscaling (14-client burst) | first-token mean: fixed 1 replica **58.09 s**, fixed 3 **25.91 s** [20.74-34.83], autoscaling **25.40 s** [24.22-26.85]; containers while idle 1 / 3 / 2. One fixed-3 run was ~1.6x slower than the others and is kept in the figures |
+| Warm pool vs none (same burst, full 1 -> 3 -> 1 lifecycle) | new capacity routable at the scale-up trigger (**0.00 s** vs **1.29 s**), but burst first-token mean **23.37 s** vs **24.00 s** and makespan **57.51 s** vs **54.95 s**: no measurable end-to-end difference; costs one idle container |
+| FCFS vs shortest-prompt-first | short requests waited **8.65 s** (`spf_aging`) vs **13.11 s** (`fcfs`), the long request **14.28 s** vs **6.31 s**; same service order and aging crossover in every run |
+| Session affinity (sequential conversations) | turn-2 time to first token **1.90 s** [1.26-2.22] vs **3.34 s** [3.03-3.56] with round robin |
+
+**Single-run measurements** (Phases 1-8, from [`report/phase9_measurements.md`](report/phase9_measurements.md)):
 
 | Experiment | Measurement |
 |---|---|
@@ -165,19 +176,19 @@ Values are taken from [`report/phase9_measurements.md`](report/phase9_measuremen
 
 <table>
 <tr>
+<td><img src="report/plots/repeats_pool_comparison.png" alt="Fixed pool of 1 vs fixed pool of 3 vs autoscaling, 3 runs each"></td>
 <td><img src="report/plots/phase6_autoscale.png" alt="Autoscaler: load signal and replicas over a 180 s run"></td>
-<td><img src="report/plots/phase4_affinity.png" alt="Session affinity: time to first token per turn"></td>
 </tr>
 </table>
 
 > [!NOTE]
-> One run per condition on one machine, one model and these workloads, so no statistical
-> significance is claimed and the numbers say nothing about production scale. Shortest-prompt-first
-> trades long-request wait for short-request wait; it is not better in general. The warm pool hides
-> ~2 s of model load, but its overall latency benefit is inconclusive. Details in the
-> [final report](report/report.md).
+> Three runs per condition for the repeated experiments and one run for the rest, on one machine,
+> one model and these workloads: no statistical significance is claimed and the numbers say nothing
+> about production scale. Shortest-prompt-first trades long-request wait for short-request wait; it
+> is not better in general. The warm pool removes ~1-2 s of model load from a scale-up, but showed
+> no end-to-end benefit for the burst. Details in the [final report](report/report.md).
 
-All six plots: [`report/plots/`](report/plots) · raw evidence: [`report/evidence/`](report/evidence)
+All plots: [`report/plots/`](report/plots) · raw evidence: [`report/evidence/`](report/evidence)
 (simulated stand-in runs kept apart in [`report/evidence/simulated/`](report/evidence/simulated)).
 
 ---
@@ -185,7 +196,8 @@ All six plots: [`report/plots/`](report/plots) · raw evidence: [`report/evidenc
 ## 🚀 Quick start
 
 **Prerequisites:** Linux (tested on WSL2 Ubuntu 24.04), Docker Engine usable without `sudo`,
-Python 3.10+ (tested 3.12) with `venv`, `curl` and `bc`.
+Python 3.10+ (tested 3.12) with `venv`, `curl` and `bc`; the Docker Compose plugin only for the
+optional Compose start.
 
 ```bash
 git clone https://github.com/darshan-gittygit/cc-proj-elastic-llm-inference-gateway.git
@@ -208,6 +220,15 @@ and starts its own replica containers.
 uvicorn gateway.main:app --port 8000
 ```
 
+Or run the gateway as a Compose service ([`docker-compose.yml`](docker-compose.yml); run from the
+project root). Compose runs only the gateway; the gateway still creates and removes the replica
+containers itself through the Docker Engine API. `docker compose down` removes them.
+
+```bash
+docker compose up -d --build
+docker compose down
+```
+
 **Send a streamed request** (add `"session_id": "demo-1"` to keep a conversation on one replica):
 
 ```bash
@@ -225,7 +246,7 @@ python loadgen/burst.py --pattern "B,B,L,S,S,S,S" --interval 0.3 --max-tokens 4
 
 ```bash
 bash scripts/run_all_demos.sh standin   # simulated stand-in replicas, no model needed
-bash scripts/run_all_demos.sh real      # real llama.cpp replicas (~14 min in the recorded dry runs)
+bash scripts/run_all_demos.sh real      # real llama.cpp replicas (~14 min in the recorded dry runs, before demo 3 was extended)
 ```
 
 | Mode | Replicas | Use it for |
@@ -237,7 +258,7 @@ The runner executes the eight phase demos in an isolated temporary copy, so comm
 never overwritten; it exits non-zero if any demo fails. Two clean real-model dry runs are recorded in
 [`report/dry_runs/`](report/dry_runs/DRY_RUNS.md).
 
-**Tests** (104, using stand-in containers): `python -m pytest tests -v`
+**Tests** (107, using stand-in containers; one also uses the llama.cpp image): `python -m pytest tests -v`
 
 ---
 
@@ -270,9 +291,11 @@ Environment: `LLMGW_CONFIG` (another config file), `LLMGW_LOG_FILE` (log to a fi
 gateway/        the gateway: API, queue and dispatch, scheduler, router, replica manager,
                 health monitor, autoscaler, logging, config.yaml
 loadgen/        burst.py load generator
-scripts/        check_feasibility.sh, one demo / check script per phase, run_all_demos.sh
-tests/          104 tests and the stand-in replica image (SIMULATED)
-report/         report.md, phase9_measurements.md, measure.py, plots/, evidence/, dry_runs/
+scripts/        check_feasibility.sh, one demo / check script per phase, compare_pools.sh, run_all_demos.sh
+tests/          107 tests and the stand-in replica image (SIMULATED)
+report/         report.md, phase9_measurements.md, measure.py, aggregate_repeats.py, plots/,
+                evidence/ (repeats/ = repeated runs), dry_runs/
+docker-compose.yml  the gateway as a Compose service (replicas stay dynamic)
 ARCHITECTURE.md frozen design, decisions and the ten-phase plan
 ```
 
@@ -282,16 +305,18 @@ ARCHITECTURE.md frozen design, decisions and the ten-phase plan
 
 ## ⚖ Limitations
 
-- **One run per condition**, so there is no statistical significance; requests within a run are not
-  independent repetitions.
+- **Few runs**: 3 per condition for the repeated experiments, 1 for the rest; no statistical
+  significance; requests within a run are not independent repetitions.
 - **Machine-, model- and workload-specific**: one laptop (WSL2), Qwen2.5-0.5B on 1-CPU replicas,
   the project's demo workloads.
-- **Warm pool**: the mechanism works, but its overall latency benefit is not established.
+- **Warm pool**: it removes model load from a scale-up, but showed no end-to-end benefit for the
+  tested burst and costs one idle container.
 - **Raw logs** were not kept for every experiment; some plots come from tables computed from the
   logs at run time.
 - **Sampling**: the autoscaler signal was recorded about every 5 s; pre-warming latency only as
   aggregates (mean / median / max).
-- Model load was measured with the model file already cached; a cold load was not measured.
+- **Cold load not measured**: every `load_s` was most likely measured with the model file already
+  cached, so none is a verified cold-start time.
 
 The deviations from the frozen design and the justification of every default are in the
 [final report](report/report.md).

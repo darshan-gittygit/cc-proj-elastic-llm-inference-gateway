@@ -6,9 +6,12 @@
 #   scripts/demo3_prewarm.sh standin   # stand-in, NO model (SIMULATED) -> report/evidence/simulated/
 #
 # Two runs, one per mode. Config = gateway/config.yaml with ONLY `prewarm` set (none | warm_pool);
-# standin mode also swaps replica_image (same for both runs). Each run: fresh gateway, wait until
-# r1 is READY, idle IDLE_S seconds (in warm_pool the spare loads during this time), then the same
-# burst of NCLIENTS concurrent clients with the same prompts, then stop the gateway.
+# standin mode also swaps replica_image (same for both runs). Each run is the full lifecycle:
+# fresh gateway, wait until r1 is READY, idle IDLE_S seconds (in warm_pool the spare loads during
+# this time), the same burst of NCLIENTS concurrent clients with the same prompts (scale-up), then
+# idle until the autoscaler has drained and stopped the extra replicas and the pool is back at
+# min_replicas READY (warm_pool: plus warm_pool_size re-armed spares), at most LIFE_TIMEOUT_S
+# seconds after the burst; then stop the gateway.
 #
 # Measured from the gateway log (monotonic mono= field) for the FIRST scale-up of each run:
 #   trigger           the "[SCALE] scale up" decision
@@ -18,6 +21,8 @@
 # Replica start-up (model load) is reported separately from request latency:
 #   load_s of the new replica, and whether it was on the burst's critical path.
 # Request latency per client: arrival (queued) -> first token, and arrival -> complete.
+# Lifecycle (both modes): READY replicas before / peak / end, every scale-down (drained or not),
+# time back at min_replicas, final pool, and that nothing scaled up again after the first scale-down.
 # Env: PYTHON (default python3), GW_PORT (default 8000), OVERWRITE=1 to replace evidence.
 set -u
 cd "$(dirname "$0")/.."
@@ -25,11 +30,12 @@ MODE="${1:-}"
 PYTHON="${PYTHON:-python3}"
 GW_PORT="${GW_PORT:-8000}"
 IDLE_S=15
+LIFE_TIMEOUT_S=300
 case "$MODE" in
   real)    LABEL="REAL MODEL RESULT (llama.cpp containers, real model)"
-           OUT=report/evidence/phase7_prewarm_real.txt; NCLIENTS=14; MAXT=40 ;;
+           OUT=report/evidence/phase7_prewarm_lifecycle_real.txt; NCLIENTS=14; MAXT=40 ;;
   standin) LABEL="SIMULATED RESULT (stand-in replica containers, no model; timings are NOT model performance)"
-           OUT=report/evidence/simulated/phase7_prewarm_standin_SIMULATED.txt; NCLIENTS=14; MAXT=300 ;;
+           OUT=report/evidence/simulated/phase7_prewarm_lifecycle_standin_SIMULATED.txt; NCLIENTS=14; MAXT=300 ;;
   *) echo "usage: $0 real|standin"; exit 2 ;;
 esac
 if [ -e "$OUT" ] && [ "${OVERWRITE:-0}" != 1 ]; then echo "ABORT: $OUT exists (set OVERWRITE=1 to replace)"; exit 1; fi
@@ -65,6 +71,15 @@ EOF
     PIDS+=($!)
   done
   wait "${PIDS[@]}"
+  read -r MINR WPS < <("$PYTHON" -c 'import sys, yaml; c = yaml.safe_load(open(sys.argv[1])); print(c["min_replicas"], c["warm_pool_size"] if c["prewarm"] == "warm_pool" else 0)' "$WORK/cfg_$PREWARM.yaml")
+  echo "== [$PREWARM] burst done; idle until back at $MINR READY replica(s) + $WPS spare(s) (max ${LIFE_TIMEOUT_S}s)"
+  LOG="$WORK/gw_$PREWARM.log"
+  for _ in $(seq 1 "$LIFE_TIMEOUT_S"); do
+    ND=$(grep -c '\[SCALE\] scale down ' "$LOG"); NS=$(grep -c '\[SCALE\] replica stopped ' "$LOG")
+    LAST=$(grep '\[SCALE\] signal ' "$LOG" | tail -1)
+    if [ "$ND" -ge 1 ] && [ "$ND" = "$NS" ] && echo "$LAST" | grep -q " ready=$MINR spares=$WPS starting=0 "; then break; fi
+    sleep 1
+  done
   sleep 0.5
   kill -TERM "$GW_PID"; wait "$GW_PID" 2>/dev/null; GW_PID=""
   docker ps -a --format '{{.Names}}' | grep -c "^$PREFIX" > "$WORK/left_$PREWARM.txt"
@@ -76,9 +91,11 @@ done
 
 {
   echo "# $LABEL"
-  echo "# Phase 7 / demo 3: prewarm none vs warm_pool, same burst; time from scale-up trigger to first request served on the new replica"
+  echo "# Phase 7 / demo 3: prewarm none vs warm_pool, same burst; time from scale-up trigger to first request served on the new replica;"
+  echo "# full lifecycle in both modes: scale-up, burst, idle, scale-down back to min_replicas"
   echo "# Run: $(date -Is) | host: $(uname -sr) | dir: $PWD"
-  echo "# Each run: fresh gateway, r1 READY, ${IDLE_S}s idle, burst of $NCLIENTS concurrent clients (same prompts), max_tokens=$MAXT. One run per mode."
+  echo "# Each run: fresh gateway, r1 READY, ${IDLE_S}s idle, burst of $NCLIENTS concurrent clients (same prompts), max_tokens=$MAXT,"
+  echo "# then idle until the pool is back at min_replicas READY (warm_pool: + re-armed spares), max ${LIFE_TIMEOUT_S}s. One run per mode."
   "$PYTHON" - "$WORK" "$NCLIENTS" <<'EOF'
 import re, statistics, sys, yaml
 work, n = sys.argv[1], int(sys.argv[2])
@@ -150,6 +167,31 @@ for p in ("none", "warm_pool"):
     early = [l for l in log if (m := re.search(r"\[ROUTE\] dispatch req=\d+ replica=(r\d+)", l))
              and (m.group(1) not in routable_at or mono(l) < routable_at[m.group(1)])]
     res[p] = rows[0] if rows else None
+    sig = [(mono(l), {k: int(v) for k, v in re.findall(r" (ready|spares|starting|total)=(\d+)", l)})
+           for l in log if "[SCALE] signal " in l]
+    downs = [(mono(l), m.group(1)) for l in log if (m := re.search(r"\[SCALE\] scale down replica=(r\d+)", l))]
+    stops = [(mono(l), m.group(1), m.group(2)) for l in log
+             if (m := re.search(r"\[SCALE\] replica stopped replica=(r\d+) drained=(\w+)", l))]
+    before = [s for t, s in sig if t < burst]
+    after = [s for t, s in sig if t >= burst]
+    final = sig[-1][1] if sig else {}
+    min_r, wps = cfgs[p]["min_replicas"], (cfgs[p]["warm_pool_size"] if p == "warm_pool" else 0)
+    last_done = max((c for c, _ in comp.values()), default=None)
+    print("== lifecycle: scale-up -> burst -> idle -> scale-down (s after burst start) ==")
+    print(f"  READY replicas: {before[-1]['ready'] if before else '?'} before the burst -> peak "
+          f"{max((s['ready'] for s in after), default='?')} -> {final.get('ready', '?')} at the end")
+    print(f"  scale-ups: {len(ups)}" + (f" (first at {mono(ups[0][0]) - burst:+.2f}, last at {mono(ups[-1][0]) - burst:+.2f})" if ups else ""))
+    if last_done is not None:
+        print(f"  last burst request complete at {last_done - burst:+.2f}")
+    for t, rid in downs:
+        st = next(((ts, d) for ts, r, d in stops if r == rid), None)
+        print(f"  scale down {rid} at {t - burst:+.2f}" + (f" -> stopped at {st[0] - burst:+.2f}, drained={st[1]}" if st else " -> not stopped"))
+    for l in log:
+        if (m := re.search(r"\[SCALE\] prewarm spare replica=(r\d+) trigger=(\w+)", l)) and mono(l) >= burst:
+            print(f"  prewarm spare {m.group(1)} (trigger={m.group(2)}) at {mono(l) - burst:+.2f}")
+    if stops:
+        print(f"  back at min_replicas={min_r} READY at {stops[-1][0] - burst:+.2f} (last replica stopped)")
+    print(f"  final pool: " + " ".join(f"{k}={final.get(k, '?')}" for k in ("ready", "spares", "starting", "total")))
     print("== checks ==")
     def check(desc, cond):
         print(("PASS: " if cond else "FAIL: ") + f"[{p}] " + desc)
@@ -163,6 +205,17 @@ for p in ("none", "warm_pool"):
     else:
         check("no spare was ever started", not any("[SCALE] prewarm spare" in l for l in log))
     check("no request dispatched to a replica before it was READY or promoted", not early)
+    check(f"idle after the burst scaled down ({len(downs)} scale-down(s)) and every stopped replica drained",
+          bool(downs) and len(stops) == len(downs) and all(d == "True" for _, _, d in stops))
+    check(f"back at min_replicas={min_r} READY at the end, nothing starting "
+          f"(ready={final.get('ready')} starting={final.get('starting')})",
+          final.get("ready") == min_r and final.get("starting") == 0)
+    check("no scale-up after the first scale-down (no flapping)",
+          bool(downs) and all(mono(l) < downs[0][0] for l, _ in ups))
+    if p == "warm_pool":
+        check(f"warm pool re-armed at the end (spares={final.get('spares')}, warm_pool_size={wps})", final.get("spares") == wps)
+    else:
+        check(f"pool back to exactly min_replicas={min_r} containers (total={final.get('total')})", final.get("total") == min_r)
     check("all replica containers removed after gateway exit", left == 0)
 
 print("\n################ comparison: first scale-up of each run ################")

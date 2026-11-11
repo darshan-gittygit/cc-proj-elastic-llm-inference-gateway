@@ -1,0 +1,25 @@
+2026-11-10T19:59:42+00:00 round=1 demo3_prewarm start | leftover=0 port=free load=0.02 0.03 0.00
+2026-11-10T20:03:49+00:00 round=1 demo3_prewarm end rc=0 elapsed=247s PASS=21 FAIL=0
+2026-11-10T20:03:50+00:00 round=1 compare_pools start | leftover=0 port=free load=1.88 1.20 0.46
+2026-11-10T20:09:04+00:00 round=1 compare_pools end rc=0 elapsed=314s PASS=13 FAIL=0
+2026-11-10T20:09:05+00:00 round=1 demo1_scheduling start | leftover=0 port=free load=0.91 0.92 0.57
+2026-11-10T20:11:15+00:00 round=1 demo1_scheduling end rc=0 elapsed=130s PASS=17 FAIL=0
+2026-11-10T20:11:15+00:00 round=1 demo2_affinity start | leftover=0 port=free load=1.17 1.32 0.79
+2026-11-10T20:12:43+00:00 round=1 demo2_affinity end rc=0 elapsed=88s PASS=25 FAIL=0
+2026-11-10T20:12:44+00:00 round=2 demo3_prewarm start | leftover=0 port=free load=0.29 0.98 0.72
+2026-11-10T20:16:54+00:00 round=2 demo3_prewarm end rc=0 elapsed=250s PASS=21 FAIL=0
+2026-11-10T20:16:54+00:00 round=2 compare_pools start | leftover=0 port=free load=0.60 0.95 0.78
+2026-11-10T20:21:39+00:00 round=2 compare_pools end rc=0 elapsed=285s PASS=13 FAIL=0
+2026-11-10T20:21:39+00:00 round=2 demo1_scheduling start | leftover=0 port=free load=3.27 1.89 1.17
+2026-11-10T20:23:55+00:00 round=2 demo1_scheduling end rc=0 elapsed=136s PASS=17 FAIL=0
+2026-11-10T20:23:55+00:00 round=2 demo2_affinity start | leftover=0 port=free load=1.47 1.74 1.21
+2026-11-10T20:25:36+00:00 round=2 demo2_affinity end rc=0 elapsed=101s PASS=25 FAIL=0
+2026-11-10T20:25:36+00:00 round=3 demo3_prewarm start | leftover=0 port=free load=1.56 1.72 1.27
+2026-11-10T20:29:42+00:00 round=3 demo3_prewarm end rc=0 elapsed=246s PASS=21 FAIL=0
+2026-11-10T20:29:42+00:00 round=3 compare_pools start | leftover=0 port=free load=0.23 1.02 1.10
+2026-11-10T20:34:19+00:00 round=3 compare_pools end rc=0 elapsed=277s PASS=13 FAIL=0
+2026-11-10T20:34:19+00:00 round=3 demo1_scheduling start | leftover=0 port=free load=5.15 2.46 1.61
+2026-11-10T20:36:30+00:00 round=3 demo1_scheduling end rc=0 elapsed=131s PASS=17 FAIL=0
+2026-11-10T20:36:30+00:00 round=3 demo2_affinity start | leftover=0 port=free load=1.33 2.20 1.66
+2026-11-10T20:38:14+00:00 round=3 demo2_affinity end rc=0 elapsed=104s PASS=25 FAIL=0
+2026-11-10T20:38:14+00:00 ALL DONE

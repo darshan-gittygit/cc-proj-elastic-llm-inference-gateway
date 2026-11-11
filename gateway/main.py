@@ -56,7 +56,7 @@ from fastapi import FastAPI
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse, StreamingResponse
 
-import gateway.router     # noqa: F401  (registers round_robin / least_busy)
+import gateway.router     # noqa: F401  (registers round_robin / least_busy / session_affinity)
 import gateway.scheduler  # noqa: F401  (registers fcfs / spf_aging)
 from gateway.autoscaler import LoadAutoscaler
 from gateway.health import ProbeHealthMonitor
@@ -64,6 +64,18 @@ from gateway.interfaces import (Config, EventLog, HealthMonitor, Replica, Replic
                                 RequestState, Scheduler, build_router, build_scheduler)
 from gateway.logging_conf import setup_logging
 from gateway.replica_manager import DockerReplicaManager
+
+
+def _log_crash(t: asyncio.Task) -> None:
+    """Done-callback for background tasks (dispatch loop, health monitor, autoscaler,
+    mark_dead): a crash is logged at ERROR with its traceback instead of passing silently.
+    Logging only; the gateway does not restart the task."""
+    if t.cancelled() or t.exception() is None:
+        return
+    logging.getLogger("gateway").error("background task crashed task=%s error=%r",
+                                       t.get_coro().__qualname__, t.exception(),
+                                       exc_info=t.exception())
+
 
 CONFIG_PATH = os.environ.get("LLMGW_CONFIG", str(Path(__file__).with_name("config.yaml")))
 
@@ -179,6 +191,7 @@ class Gateway:
         t = asyncio.create_task(coro)
         self._background.add(t)
         t.add_done_callback(self._background.discard)
+        t.add_done_callback(_log_crash)
         return t
 
     # ---- request path ----------------------------------------------------

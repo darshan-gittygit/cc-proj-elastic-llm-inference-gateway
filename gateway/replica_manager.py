@@ -10,7 +10,11 @@ reaches each one at <container IP>:8080, so no host ports are published.
 Readiness: start_replica() returns at once with the replica STARTING; a background
 task polls /health and flips it to READY (or WARM_SPARE when as_spare=True).
 Continuous health probing and replacement of dead replicas are Phase 5
-(HealthMonitor); here a container that exits or never loads is only marked DEAD.
+(HealthMonitor). A container that exits or never loads while STARTING is removed here
+(container and pool entry); if it was not a spare and the pool is below min_replicas, a
+replacement is started, at most MAX_LOAD_FAILURES consecutive load failures in a row
+(the count resets when any replica becomes ready), so a broken image or model file
+cannot turn into an endless start/die loop.
 
 Log tags: SCALE for start / drain / stop / remove, HEALTH for readiness.
 """
@@ -32,6 +36,7 @@ LABEL_KEY = "llmgw.role"
 REPLICA_PORT = 8080
 READINESS_POLL_S = 0.5      # same poll step as check_feasibility.sh
 READY_TIMEOUT_S = 180.0     # give up on a replica that never answers /health
+MAX_LOAD_FAILURES = 3       # consecutive replicas dying while loading before replacements stop
 
 
 class DockerReplicaManager(ReplicaManager):
@@ -47,6 +52,7 @@ class DockerReplicaManager(ReplicaManager):
         self._ids = itertools.count(1)
         self._tasks: set[asyncio.Task] = set()
         self._creating: set[asyncio.Future] = set()     # docker run calls still in their thread
+        self._load_failures = 0                          # consecutive replicas that died while loading
 
     # ---- setup / teardown ------------------------------------------------
     async def setup(self) -> None:
@@ -177,6 +183,7 @@ class DockerReplicaManager(ReplicaManager):
                 if (await self._http.get(f"{r.base_url}/health")).status_code == 200:
                     r.ready_ts = time.monotonic()
                     r.state = ReplicaState.WARM_SPARE if as_spare else ReplicaState.READY
+                    self._load_failures = 0
                     self.log.health("replica ready", replica=r.id, state=r.state.value,
                                     load_s=f"{r.ready_ts - r.created_ts:.2f}")
                     self._on_change()
@@ -184,12 +191,30 @@ class DockerReplicaManager(ReplicaManager):
             except httpx.HTTPError:
                 pass
             if not await asyncio.to_thread(self._container_running, r.container_id):
-                r.state = ReplicaState.DEAD
-                self.log.health("replica dead while loading (container exited)", replica=r.id)
+                await self._load_failed(r, as_spare, "container exited")
                 return
             if time.monotonic() - r.created_ts > READY_TIMEOUT_S:
-                r.state = ReplicaState.DEAD
-                self.log.health("replica dead while loading (timeout)", replica=r.id,
-                                timeout_s=READY_TIMEOUT_S)
+                await self._load_failed(r, as_spare, f"timeout after {READY_TIMEOUT_S:.0f} s")
                 return
             await asyncio.sleep(READINESS_POLL_S)
+
+    async def _load_failed(self, r: Replica, as_spare: bool, why: str) -> None:
+        """A STARTING replica died: remove its container and pool entry, then replace it only
+        if it was not a spare, the pool is below min_replicas, and the failure cap is not hit.
+        Spares are left to the autoscaler's warm-pool maintenance, which starts one at a time."""
+        r.state = ReplicaState.DEAD
+        self._load_failures += 1
+        self.log.health(f"replica dead while loading ({why})", replica=r.id,
+                        load_failures=f"{self._load_failures}/{MAX_LOAD_FAILURES}")
+        await self.kill_and_remove(r, reason="dead while loading")
+        if as_spare:
+            return
+        alive = [x for x in self.pool.all() if x.state in (ReplicaState.STARTING, ReplicaState.READY)]
+        if len(alive) >= self.cfg.min_replicas:
+            return
+        if self._load_failures >= MAX_LOAD_FAILURES:
+            self.log.health("not replacing replica that died while loading", replica=r.id,
+                            reason="too_many_load_failures", load_failures=self._load_failures)
+            return
+        new = await self.start_replica()
+        self.log.health("replacement started", replica=new.id, replacing=r.id)

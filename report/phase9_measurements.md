@@ -1,5 +1,8 @@
 # Phase 9 - Measurements and plots (real model only)
 
+> This file records the Phase 9 single-run measurements. The later repeated runs (3 per condition)
+> and the fixed-pool baseline are in `report/evidence/repeats/` and section 6.1 of `report.md`.
+
 Frozen criterion (ARCHITECTURE.md section 4): *"Real numbers from the demo machine only; plots generated
 from logs."* Every number below comes from the committed real-model evidence of Phases 1-7, recorded
 on the demo machine (Windows 11 laptop, WSL2 Ubuntu 24.04, 16 cores visible, Docker 29.1.3,

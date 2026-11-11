@@ -1,0 +1,82 @@
+# REAL MODEL RESULT (llama.cpp containers, real model)
+# Baseline comparison: fixed pool of 1 vs fixed pool of 3 vs autoscaling, same burst, same metrics
+# Run: 2026-11-10T20:21:39+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | dir: /tmp/llmgw-day2.abbEpC
+# Each run: fresh gateway, min_replicas READY, 15s idle, burst of 14 concurrent clients (same prompts), max_tokens=40. One run per pool.
+# config fixed1: min_replicas=1 max_replicas=1 prewarm=none warm_pool_size=1 slots_per_replica=2 scale_up_threshold=4.0 scale_up_after_s=5.0 scale_down_threshold=1.0 scale_down_cooldown_s=30.0 replica_image=ghcr.io/ggml-org/llama.cpp:server replica_cpus=1.0 replica_memory=1g scheduler=spf_aging router=least_busy
+# config fixed3: min_replicas=3 max_replicas=3 prewarm=none warm_pool_size=1 slots_per_replica=2 scale_up_threshold=4.0 scale_up_after_s=5.0 scale_down_threshold=1.0 scale_down_cooldown_s=30.0 replica_image=ghcr.io/ggml-org/llama.cpp:server replica_cpus=1.0 replica_memory=1g scheduler=spf_aging router=least_busy
+# config autoscale: min_replicas=1 max_replicas=3 prewarm=warm_pool warm_pool_size=1 slots_per_replica=2 scale_up_threshold=4.0 scale_up_after_s=5.0 scale_down_threshold=1.0 scale_down_cooldown_s=30.0 replica_image=ghcr.io/ggml-org/llama.cpp:server replica_cpus=1.0 replica_memory=1g scheduler=spf_aging router=least_busy
+
+################ run fixed1 ################
+== replica events (s after burst start) ==
+   -16.75  [SCALE] replica started replica=r1 container=llmgw-replica-r1
+   -15.06  [HEALTH] replica ready replica=r1 state=ready load_s=2.06
+    +5.37  [SCALE] scale up wanted but blocked reason=at_max_replicas=1 signal=13.78
+== requests per replica: {'r1': 14}
+== request latency of the burst clients (arrival -> first token / -> complete, s) ==
+  first token: mean 57.64  median 57.04  max 110.09
+  complete:    mean 72.52  median 72.39  max 125.09
+  burst makespan (first arrival -> last completion): 125.10
+== cost: replica containers while idle before the burst 1, peak READY replicas 1, peak replica containers 1, container-seconds during the burst window 125.1 (x replica_cpus=1.0 CPU each)
+== checks ==
+PASS: [fixed1] all 14 clients got [DONE] and no error (14/14)
+PASS: [fixed1] all 14 requests completed in the log (14/14)
+PASS: [fixed1] fixed pool: no scale-up and exactly 1 replica(s) started
+PASS: [fixed1] all replica containers removed after gateway exit
+
+################ run fixed3 ################
+== replica events (s after burst start) ==
+   -17.21  [SCALE] replica started replica=r1 container=llmgw-replica-r1
+   -16.94  [SCALE] replica started replica=r2 container=llmgw-replica-r2
+   -16.65  [SCALE] replica started replica=r3 container=llmgw-replica-r3
+   -15.61  [HEALTH] replica ready replica=r1 state=ready load_s=1.96
+   -15.35  [HEALTH] replica ready replica=r2 state=ready load_s=1.87
+   -15.06  [HEALTH] replica ready replica=r3 state=ready load_s=1.88
+    +7.46  [SCALE] scale up wanted but blocked reason=at_max_replicas=3 signal=4.65
+== requests per replica: {'r1': 4, 'r2': 4, 'r3': 6}
+== request latency of the burst clients (arrival -> first token / -> complete, s) ==
+  first token: mean 20.74  median 25.99  max 45.28
+  complete:    mean 38.25  median 41.44  max 58.48
+  burst makespan (first arrival -> last completion): 58.50
+== cost: replica containers while idle before the burst 3, peak READY replicas 3, peak replica containers 3, container-seconds during the burst window 175.5 (x replica_cpus=1.0 CPU each)
+== checks ==
+PASS: [fixed3] all 14 clients got [DONE] and no error (14/14)
+PASS: [fixed3] all 14 requests completed in the log (14/14)
+PASS: [fixed3] fixed pool: no scale-up and exactly 3 replica(s) started
+PASS: [fixed3] all replica containers removed after gateway exit
+
+################ run autoscale ################
+== replica events (s after burst start) ==
+   -16.70  [SCALE] replica started replica=r1 container=llmgw-replica-r1
+   -15.10  [HEALTH] replica ready replica=r1 state=ready load_s=1.97
+   -14.31  [SCALE] replica started replica=r2 container=llmgw-replica-r2
+   -14.31  [SCALE] prewarm spare replica=r2 trigger=idle signal=0.00
+   -12.77  [HEALTH] replica ready replica=r2 state=warm load_s=1.90
+    +5.78  [SCALE] spare promoted replica=r2
+    +5.78  [SCALE] scale up how=promote_spare replica=r2 signal=13.78
+    +6.19  [SCALE] replica started replica=r3 container=llmgw-replica-r3
+    +6.19  [SCALE] prewarm spare replica=r3 trigger=load signal=13.78
+    +8.43  [HEALTH] replica ready replica=r3 state=warm load_s=2.65
+   +11.20  [SCALE] spare promoted replica=r3
+   +11.20  [SCALE] scale up how=promote_spare replica=r3 signal=7.21
+   +16.22  [SCALE] scale up wanted but blocked reason=at_max_replicas=3 signal=4.75
+== requests per replica: {'r1': 6, 'r2': 4, 'r3': 4}
+== request latency of the burst clients (arrival -> first token / -> complete, s) ==
+  first token: mean 26.85  median 26.94  max 47.23
+  complete:    mean 44.38  median 43.14  max 63.34
+  burst makespan (first arrival -> last completion): 63.35
+== cost: replica containers while idle before the burst 2, peak READY replicas 3, peak replica containers 3, container-seconds during the burst window 183.9 (x replica_cpus=1.0 CPU each)
+== checks ==
+PASS: [autoscale] all 14 clients got [DONE] and no error (14/14)
+PASS: [autoscale] all 14 requests completed in the log (14/14)
+PASS: [autoscale] the burst triggered a scale-up
+PASS: [autoscale] all replica containers removed after gateway exit
+
+################ comparison (one run per pool) ################
+        pool  first token mean  first token max  complete mean  makespan  idle containers  peak READY  peak containers  container-s in burst
+      fixed1             57.64           110.09          72.52    125.10                1           1                1                 125.1
+      fixed3             20.74            45.28          38.25     58.50                3           3                3                 175.5
+   autoscale             26.85            47.23          44.38     63.35                2           3                3                 183.9
+  Latency in seconds. One run per pool; no statistical claim is made.
+
+# config keys that differ from autoscale: {'fixed1': ['max_replicas', 'prewarm'], 'fixed3': ['min_replicas', 'prewarm']}
+PASS: [all] only the pool keys differ between runs (expected {'fixed1': ['max_replicas', 'prewarm'], 'fixed3': ['min_replicas', 'prewarm']})
