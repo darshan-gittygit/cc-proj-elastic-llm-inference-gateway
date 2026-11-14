@@ -1,6 +1,15 @@
 # Elastic LLM Inference Gateway - Final Report
 
-A gateway that serves a small LLM (Qwen2.5-0.5B-Instruct, llama.cpp) from a pool of Docker
+**Cloud Computing (CS363) - Course Project, Department of Computer Science and Engineering, NITK Surathkal**
+
+| Team member | Roll number |
+|---|---|
+| B Darshan Sai Naath | 241CS114 |
+| Parmeet Singh Saini | 241CS139 |
+| Vishal Murugan | 241CS165 |
+| Jiya Jayaprakash | 241CS230 |
+
+A gateway that serves a small LLM (Qwen2.5-0.5B-Instruct [1, 2], llama.cpp [3]) from a pool of Docker
 replicas on one machine, with request scheduling, routing, session affinity, fault tolerance,
 autoscaling with a warm pool, and configuration switching without a restart. The design was frozen
 in `ARCHITECTURE.md` (Phase 0) and built in nine further phases. Every result below comes from
@@ -17,7 +26,7 @@ decisions explicitly, logs each one, and can change its policies at run time.
 
 ## 2. Architecture (frozen, ARCHITECTURE.md section 2)
 
-One Python process (FastAPI + asyncio) and N llama.cpp containers; no database or broker.
+One Python process (FastAPI [4] + asyncio) and N llama.cpp containers; no database or broker.
 
 ```
 client --SSE--> POST /v1/chat/completions --> central queue (Scheduler) --> dispatch loop
@@ -44,7 +53,7 @@ slot, so the scheduler alone decides who goes next and the router alone decides 
 
 **Static versus dynamic infrastructure.** `docker-compose.yml` runs the static part, the gateway
 itself, as one Compose service (image `gateway/Dockerfile`). Replicas are not Compose services: the
-gateway creates, drains and removes them at run time through the Docker Engine API, because their
+gateway creates, drains and removes them at run time through the Docker Engine API [5, 6], because their
 number changes with load. The gateway container mounts the Docker socket (sibling containers, not
 Docker-in-Docker), mounts the project at the same absolute path so `models_dir` resolves to a host
 path the daemon can bind-mount, and uses host networking to reach replicas on the `llmgw-net`
@@ -56,8 +65,8 @@ replica container.
 ## 3. Mechanisms
 
 **Scheduling (Phase 3).** `fcfs` serves in arrival order. `spf_aging` serves the lowest
-`priority = prompt_tokens - aging_alpha x wait_s` (prompt length estimated as characters / 4).
-Aging bound, stated precisely: a long request outranks every shorter request that arrives more than
+`priority = prompt_tokens - aging_alpha x wait_s` (prompt length estimated as characters / 4), i.e.
+shortest-job-first with aging [7], with the prompt length as the job-size estimate. Aging bound, stated precisely: a long request outranks every shorter request that arrives more than
 `(p_long - p_short) / alpha` seconds after it; it still waits for those that arrived before that point.
 
 **Routing (Phase 2).** `round_robin` takes routable replicas in turn; `least_busy` picks the lowest
@@ -90,13 +99,32 @@ spare if there is one, else start a container, at most one start at a time); sca
 draining the least-loaded READY replica (no new requests; in-flight ones may finish for up to 30 s,
 then the container is stopped). With `prewarm: warm_pool`, `warm_pool_size`
 loaded-but-unroutable spares are kept (started under load or at idle). Spares count toward
-`max_replicas` (my reading of decision 12; the frozen text does not say).
+`max_replicas` (our reading of decision 12; the frozen text does not say).
 
 **Configuration reload and load generator (Phase 8).** `POST /admin/reload` re-reads the config
 file, validates all of it first (invalid file: HTTP 400, nothing changes), then applies it in one
 synchronous step; the scheduler/router are rebuilt when their setting changed and queued requests
 (retries first) move to the new scheduler. `loadgen/burst.py` sends deterministic workloads and
 records client-side timings.
+
+**Cloud computing concepts demonstrated.** The project realises, at single-host scale, the
+mechanisms that cloud platforms use to serve variable load on shared infrastructure (for example
+the Kubernetes Horizontal Pod Autoscaler [8] and warm pools in Amazon EC2 Auto Scaling [9]):
+
+| Concept | How the gateway realises it | Where it is shown |
+|---|---|---|
+| Elastic horizontal scaling | replicas added and removed on a load signal, with hysteresis against flapping | 6.1.1, 6.1.2, Fig. 8 |
+| Resource isolation and quotas | each replica is a container with a cgroup CPU quota and memory limit (`--cpus`, `--memory`) | section 4, `replica_threads_real.txt` |
+| Programmatic infrastructure | replicas created, drained and removed through the Docker Engine API; the static gateway service through Docker Compose | section 2 |
+| Health checking and self-healing | probes and broken streams mark replicas DEAD; requests are requeued and replicas replaced | 6.2, Fig. 7 |
+| Cold starts and warm pools | loaded-but-unroutable spares trade idle cost for scale-up readiness | 6.1.1 |
+| Load balancing and stateful placement | least-busy routing; session affinity to reuse a replica's prompt cache | 6.1.4 |
+| Graceful scale-in | draining: no new requests, in-flight work finishes before the container stops | 6.1.1 |
+| Request scheduling on shared capacity | one central queue; fcfs vs shortest-prompt-first with aging | 6.1.3 |
+| Observability | one structured, timestamped log line per decision; every figure is derived from these logs | section 4 |
+
+Everything runs on one machine; multi-node orchestration (for example Kubernetes) is outside the
+scope of this project.
 
 ## 4. Experimental setup and methodology
 
@@ -379,3 +407,73 @@ minutes each), left no containers, processes or temporary files, and did not cha
 file. A third run on the submitted code (2026-11-11) passed all 8 demos with 115 checks (demo 3 now
 has 21), 0 failures, in 940 s, with the same clean-up and evidence checks. The dry runs are rehearsals: their outputs are discarded and are not used as measurements.
 Details, commands and the console logs: `report/dry_runs/DRY_RUNS.md`.
+
+## 11. Conclusion and future work
+
+We built a gateway that makes the queueing, placement, scaling and recovery decisions for
+containerized LLM replicas explicit: one central queue, a scheduler that alone decides who goes
+next, a router that alone decides where, and a replica manager, health monitor and autoscaler that
+change the pool through the Docker Engine API, with every policy switchable at run time and every
+decision logged. On this machine, with this model and these workloads, the measurements support
+the following conclusions.
+
+- **Elastic capacity pays off for bursts.** Autoscaling gave first-token latency comparable to a
+  permanently provisioned pool of three (25.40 vs 25.91 s mean) while holding 2 containers idle
+  instead of 3, and less than half that of a single replica (58.09 s). Fixed capacity still
+  reached the first token sooner in 2 of 3 runs, because it exists before the burst.
+- **Scheduling is a trade-off, not a free gain.** Shortest-prompt-first cut the short requests'
+  mean wait from 13.11 to 8.65 s and raised the long request's from 6.31 to 14.28 s; aging bounded
+  its starvation (served after 9 short requests instead of last, 23.50 vs 39.83 s), with the same
+  service order in every run.
+- **Placement matters for stateful work.** Session affinity lowered turn-2 time to first token
+  from 3.34 to 1.90 s for sequential conversations, with more prompt-cache reuse (44 vs 24-28
+  tokens).
+- **Failures are handled inside the gateway.** A killed replica was detected in 0.46-0.66 s and a
+  frozen one in 7.55-7.77 s; replacements were READY 2.25-2.44 s after detection, and all 8 retried
+  requests completed on their first retry (Phase 5, two runs).
+- **A warm pool helps only when start-up is the bottleneck.** The spare made new capacity routable
+  at once, but with cached model loads of 1.3-2.1 s the 5 s scale-up window and queueing dominated
+  what clients waited for, so burst-level latency did not improve measurably.
+
+The broader lesson for this host is that the scale-up delay clients saw was set mainly by the
+autoscaler's own persistence window and by queueing, not by starting a replica.
+
+**Future work**, each item following from a limitation in section 7:
+
+- **Cold starts:** measure model loads with the page cache dropped (on a native Linux host) and
+  with larger models, to test whether the warm pool's benefit grows with load time, as decision 8
+  assumed.
+- **Thread count:** set llama.cpp's `-t` to match the 1-CPU quota and measure its effect on
+  per-replica throughput.
+- **Robustness:** admission control (a bounded queue answering 429/503), a read timeout on replica
+  streams, session histories bounded to the context window, serialised turns within a session,
+  and a cap on warm-spare restarts.
+- **Wider experiments:** more runs per condition, other burst shapes, a sweep of
+  `scale_up_after_s` and the thresholds (none was swept), session affinity with many concurrent
+  sessions, and demo scripts that keep raw gateway logs so outliers such as fixed3 run 1 can be
+  diagnosed.
+- **Multiple machines:** move replica management from the Docker Engine API to an orchestrator
+  such as Kubernetes [8] and compare the gateway's own scaling policy with its Horizontal Pod
+  Autoscaler; larger models would call for a GPU serving engine such as vLLM [10] behind the same
+  gateway.
+
+## References
+
+Web pages were accessed in November 2026.
+
+1. Qwen Team (A. Yang et al.), "Qwen2.5 Technical Report," arXiv:2412.15115, 2024.
+2. Qwen, "Qwen2.5-0.5B-Instruct-GGUF" (model files), Hugging Face,
+   https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+3. ggml-org, "llama.cpp: LLM inference in C/C++," https://github.com/ggml-org/llama.cpp
+4. S. Ramírez, "FastAPI," https://fastapi.tiangolo.com/
+5. Docker Inc., "Docker Engine API," https://docs.docker.com/reference/api/engine/
+6. Docker Inc., "Docker SDK for Python," https://docker-py.readthedocs.io/
+7. A. Silberschatz, P. B. Galvin and G. Gagne, *Operating System Concepts*, 10th ed., Wiley, 2018
+   (CPU scheduling: shortest-job-first and aging).
+8. The Kubernetes Authors, "Horizontal Pod Autoscaling,"
+   https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
+9. Amazon Web Services, "Decrease latency for applications with long boot times using warm pools,"
+   Amazon EC2 Auto Scaling User Guide,
+   https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-warm-pools.html
+10. W. Kwon et al., "Efficient Memory Management for Large Language Model Serving with
+    PagedAttention," in *Proc. 29th ACM Symposium on Operating Systems Principles (SOSP)*, 2023.

@@ -1,5 +1,8 @@
 # Viva preparation - Elastic LLM Inference Gateway
 
+CS363 Cloud Computing, NITK Surathkal. Team: B Darshan Sai Naath (241CS114), Parmeet Singh Saini
+(241CS139), Vishal Murugan (241CS165), Jiya Jayaprakash (241CS230).
+
 Internal preparation notes. Every statement points to code (`file:line` as of 2026-11-11) or to
 evidence; where the project does not establish an answer, that is said explicitly. Numbers are
 from `report/report.md` (repeated runs: `report/evidence/repeats/SUMMARY.txt`).

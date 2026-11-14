@@ -24,8 +24,16 @@ are started, health-checked, drained, replaced and autoscaled through the Docker
 optional warm pool of pre-loaded spares. Policies can be switched at run time without a restart, and
 every decision is written to a one-line-per-event log.
 
-Built as a cloud computing mini-project in ten frozen phases, each with real-model evidence
-and a separate simulated run. This is a single-host research prototype, not a production platform.
+Built as the **CS363 Cloud Computing** course project (Department of CSE, NITK Surathkal) in ten
+frozen phases, each with real-model evidence and a separate simulated run. This is a single-host
+research prototype, not a production platform.
+
+| Team member | Roll number |
+|---|---|
+| B Darshan Sai Naath | 241CS114 |
+| Parmeet Singh Saini | 241CS139 |
+| Vishal Murugan | 241CS165 |
+| Jiya Jayaprakash | 241CS230 |
 
 ---
 
@@ -294,8 +302,8 @@ gateway/        the gateway: API, queue and dispatch, scheduler, router, replica
 loadgen/        burst.py load generator
 scripts/        check_feasibility.sh, one demo / check script per phase, compare_pools.sh, run_all_demos.sh
 tests/          107 tests and the stand-in replica image (SIMULATED)
-report/         report.md, phase9_measurements.md, measure.py, aggregate_repeats.py, plots/,
-                evidence/ (repeats/ = repeated runs), dry_runs/
+report/         report.md, latex/ (LaTeX source of the PDF report), phase9_measurements.md,
+                measure.py, aggregate_repeats.py, plots/, evidence/ (repeats/ = repeated runs), dry_runs/
 docker-compose.yml  the gateway as a Compose service (replicas stay dynamic)
 ARCHITECTURE.md frozen design, decisions and the ten-phase plan
 ```
