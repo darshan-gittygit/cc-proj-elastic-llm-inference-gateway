@@ -73,14 +73,15 @@
 
 % =====================================================================
 \begin{titlepage}
-% page border: a single frame
+\centering
+% the same 0.4cm above the first line and below the last, so the content is centred on the page
+\vspace*{0.4cm}
+% page border: a single frame (an overlay, so it takes no space)
 \begin{tikzpicture}[remember picture, overlay]
   \draw[titleblue, line width=1.5pt]
     ([xshift=1.2cm, yshift=-1.2cm]current page.north west) rectangle
     ([xshift=-1.2cm, yshift=1.2cm]current page.south east);
-\end{tikzpicture}
-\centering
-\vspace*{0.4cm}
+\end{tikzpicture}%
 {\Large\bfseries\color{titleblue} National Institute of Technology Karnataka, Surathkal\par}
 % optional: put the institute logo at figures/nitk_logo.png and it appears here
 \IfFileExists{figures/nitk_logo.png}{\vspace{14pt}\includegraphics[height=3cm]{nitk_logo.png}\par}{}
@@ -95,12 +96,12 @@
 {\Large\itshape Scheduling, routing, autoscaling and fault tolerance\\[2pt]
  for containerized local LLM replicas\par}
 \vspace{14pt}{\color{titleblue}\rule{\textwidth}{1.4pt}}\par
-\vfill
+\vspace{\stretch{0.75}}   % slightly smaller gaps here, and some space under the table
 {\LARGE\bfseries Final Report\par}
-\vfill
+\vspace{\stretch{0.75}}
 {\Large\bfseries Submitted by\par}
 \vspace{10pt}
-{\large\renewcommand{\arraystretch}{1.5}%
+{\fontsize{12.7}{15.5}\selectfont\renewcommand{\arraystretch}{1.5}%   12.7pt = \large + 0.7pt
 \begin{tabular}{@{}l@{\hspace{2.5cm}}l@{}}
 \toprule
 \textbf{Name} & \textbf{Roll number} \\
@@ -116,7 +117,7 @@ Jiya Jayaprakash    & 241CS230 \\
 {\Large\bfseries Submitted to\par}\vspace{6pt}
 {\large \instructor\par}
 \fi
-\vfill
+\vspace{\stretch{0.5}}
 \vspace*{0.4cm}
 \end{titlepage}
 
