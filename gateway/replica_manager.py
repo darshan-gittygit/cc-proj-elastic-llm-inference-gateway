@@ -13,8 +13,10 @@ Continuous health probing and replacement of dead replicas are Phase 5
 (HealthMonitor). A container that exits or never loads while STARTING is removed here
 (container and pool entry); if it was not a spare and the pool is below min_replicas, a
 replacement is started, at most MAX_LOAD_FAILURES consecutive load failures in a row
-(the count resets when any replica becomes ready), so a broken image or model file
-cannot turn into an endless start/die loop.
+(the count resets when any replica becomes ready), so the manager's own replacements
+cannot turn into an endless start/die loop. This cap does not cover warm spares: a spare
+that fails is not replaced here, and the autoscaler's warm-pool maintenance starts a new
+one without a cap (one at a time; each failed spare is removed).
 
 Log tags: SCALE for start / drain / stop / remove, HEALTH for readiness.
 """

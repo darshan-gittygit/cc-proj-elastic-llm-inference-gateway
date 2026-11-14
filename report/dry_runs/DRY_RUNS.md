@@ -1,6 +1,6 @@
-# Phase 10 - two clean dry runs of `scripts/run_all_demos.sh`
+# Dry runs of `scripts/run_all_demos.sh` (two in Phase 10, one final run on the submitted code)
 
-Both runs used the real model on the demo machine (WSL2 Ubuntu 24.04, Docker 29.1.3, Python 3.12.3,
+The two Phase 10 runs used the real model on the demo machine (WSL2 Ubuntu 24.04, Docker 29.1.3, Python 3.12.3,
 llama.cpp server image, Qwen2.5-0.5B-Instruct Q4_K_M). They are rehearsals of the full demo, not
 measurement experiments: the runner works in a temporary copy of the project and deletes the demos'
 outputs afterwards, so no number from these runs is used in the report and no evidence was written.
@@ -40,6 +40,39 @@ After each run: 0 gateway containers, 0 gateway/test/load processes, port 8000 f
 copies, and the evidence checksum unchanged (`87b048a0fd824bca` before and after both runs, in both
 the Windows repository and the WSL copy).
 
+## Final dry run on the submitted code (2026-11-11)
+
+A third real-model run, made after the finalization changes (Compose, failure-path fixes, demo 3
+extended to the full 1 -> 3 -> 1 lifecycle) on the code that was then committed unchanged as
+`e76b5ce`. Same command, plus a results directory outside the repository. Demo 3 now has 21 checks
+(was 13), so the total is 115.
+
+| Demo (phase) | Run 3 |
+|---|---|
+| phase1_stream_check (1) | PASS, 6 checks, 9 s |
+| phase2_routing_check (2) | PASS, 16 checks, 52 s |
+| demo1_scheduling (3) | PASS, 17 checks, 142 s |
+| demo2_affinity (4) | PASS, 25 checks, 121 s |
+| demo4_fault (5) | PASS, 10 checks, 129 s |
+| phase6_autoscale_check (6) | PASS, 9 checks, 194 s |
+| demo3_prewarm (7) | PASS, 21 checks, 272 s |
+| demo5_config (8) | PASS, 11 checks, 80 s |
+| **Total** | **115 PASS, 0 FAIL, exit 0** (04:59:47-05:15:24 UTC, 940 s) |
+
+After the run: 0 gateway containers, 0 gateway processes, port 8000 free, 0 temporary copies, and
+the evidence checksums unchanged. The wrapper's pre-run state line was garbled by a terminal
+warning; the runner's own prerequisite checks (no replica containers, port 8000 free) passed, or it
+would not have started (`dry_run_3.checks.txt`).
+
+## Recorded test run and Compose check on the submitted code (2026-11-14)
+
+- `python -m pytest tests -v`: **107 passed** in 244 s, 0 containers left (`test_run.log`). The
+  only code changes since `e76b5ce` are comments and docstrings.
+- Docker Compose with the real model (`compose_check.log`): `docker compose config` valid;
+  `up -d --build` started the gateway service, which created replica r1 and warm spare r2 through
+  the Docker Engine API; one streamed request completed with `data: [DONE]`; `docker compose down`
+  removed the gateway and every replica container (0 left).
+
 ## Failure handling (checked separately, stand-in mode, not a dry run)
 
 - No mode, an unknown mode, or a Python without the required packages: refused before anything
@@ -51,5 +84,6 @@ the Windows repository and the WSL copy).
 
 ## Files
 
-- `dry_run_1.log`, `dry_run_2.log` - the runner's complete console output.
-- `dry_run_1.checks.txt`, `dry_run_2.checks.txt` - clean-setup and post-run state.
+- `dry_run_1.log`, `dry_run_2.log`, `dry_run_3.log` - the runner's complete console output.
+- `dry_run_1.checks.txt`, `dry_run_2.checks.txt`, `dry_run_3.checks.txt` - clean-setup and post-run state.
+- `test_run.log` - the full `pytest -v` output; `compose_check.log` - the Compose up / request / down check.

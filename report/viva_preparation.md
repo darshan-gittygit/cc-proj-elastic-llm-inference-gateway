@@ -375,8 +375,8 @@ demo demo4_fault real         # docker kill / docker pause mid-stream (~2.5 min)
 demo demo5_config real        # live reload changes order, placement, warm pool (~1 min)
 demo demo3_prewarm real       # full 1 -> 3 -> 1 lifecycle, none vs warm_pool (~4 min)
 ```
-Or everything at once: `bash scripts/run_all_demos.sh real` (8 demos, ~14 min before demo 3 was
-extended; now a few minutes longer).
+Or everything at once: `bash scripts/run_all_demos.sh real` (8 demos, 115 checks, ~16 min: 940 s
+in the final recorded dry run, `report/dry_runs/`).
 
 **7. Shut down:** Ctrl+C on uvicorn (or `docker compose down`). Expect `[SCALE] replica removed
 ... reason=gateway_shutdown` for every replica; then

@@ -1,10 +1,12 @@
 """
-Failure-path tests added on review (independent evaluation findings F2 and F3).
+Failure-path tests for replica loading and background tasks.
 
-F2: a replica whose container exits (or never answers /health) while it is still
-    STARTING must not stay in the pool as DEAD with its exited container left behind.
-F3: a background task of the gateway (dispatch loop, health monitor, autoscaler,
-    mark_dead) that crashes must be logged instead of disappearing silently.
+Replica that dies while loading: a replica whose container exits (or never answers
+    /health) while it is still STARTING must be removed (container and pool entry), not
+    left in the pool as DEAD with its exited container behind, and replacements must stop
+    after MAX_LOAD_FAILURES consecutive failures.
+Crashed background task: a background task of the gateway (dispatch loop, health monitor,
+    autoscaler, mark_dead) that raises must be logged instead of disappearing silently.
 """
 from __future__ import annotations
 

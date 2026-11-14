@@ -17,6 +17,8 @@ No stand-in result is used. The committed single-run evidence of Phases 3, 4 and
   `scripts/run_all_demos.sh`), so no committed evidence could be overwritten; each output was copied
   here as `<name>_run<k>.txt`. Before every demo: no `llmgw-replica-*` container and port 8000 free
   (checked and logged; never violated).
+- Code: the runs used the gateway code as submitted (after the replica-load and crash-logging
+  fixes); later changes to `gateway/` are comments and docstrings only.
 - Scripts and configuration: the demo scripts as they are in the working tree (demo 3 with the Day 1
   lifecycle extension; `compare_pools.sh` new). Configuration = `gateway/config.yaml` with only the
   per-experiment keys each script sets (listed in every output file's header). No policy, threshold

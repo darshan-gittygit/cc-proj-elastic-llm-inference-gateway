@@ -246,7 +246,7 @@ python loadgen/burst.py --pattern "B,B,L,S,S,S,S" --interval 0.3 --max-tokens 4
 
 ```bash
 bash scripts/run_all_demos.sh standin   # simulated stand-in replicas, no model needed
-bash scripts/run_all_demos.sh real      # real llama.cpp replicas (~14 min in the recorded dry runs, before demo 3 was extended)
+bash scripts/run_all_demos.sh real      # real llama.cpp replicas (~16 min in the final recorded dry run)
 ```
 
 | Mode | Replicas | Use it for |
@@ -255,7 +255,8 @@ bash scripts/run_all_demos.sh real      # real llama.cpp replicas (~14 min in th
 | `standin` | a small FastAPI image that streams fake tokens | checking gateway behaviour without a model; its timings are simulated |
 
 The runner executes the eight phase demos in an isolated temporary copy, so committed evidence is
-never overwritten; it exits non-zero if any demo fails. Two clean real-model dry runs are recorded in
+never overwritten; it exits non-zero if any demo fails. Three clean real-model dry runs (the last one
+on the submitted code), a recorded test run and a Compose check are in
 [`report/dry_runs/`](report/dry_runs/DRY_RUNS.md).
 
 **Tests** (107, using stand-in containers; one also uses the llama.cpp image): `python -m pytest tests -v`

@@ -1,0 +1,20 @@
+== final dry run on the submitted code (2026-11-11)
+== code: the working tree that was then committed unchanged as e76b5ce; WSL copy re-synced from the Windows repository first
+== before dry run 3 (2026-11-11T04:59 UTC)
+pre-run state line: garbled in the wrapper's output by a WSL terminal warning, not reproduced here.
+runner prerequisites: passed (run_all_demos.sh exits 2 before starting unless Docker is reachable,
+  the model file and llama.cpp image are present, no llmgw-replica-* container exists and port 8000 is free)
+load average (1, 5, 15 min): 0.16 0.03 0.01
+evidence in Windows repo (sha256 of all files): 4bd14cfa192240eb
+evidence in WSL copy     (sha256 of all files): a8439be34a36e676
+  (the two differ because this sync left the WSL copy's report/evidence/ at an older subset;
+   what is checked is that neither changes during the run)
+== command: cd ~/llmgw-wsl-test-copy && source ~/llmgw-venv/bin/activate && bash scripts/run_all_demos.sh real ~/llmgw-day5-dryrun
+== runner exit code: 0 (940 s, 04:59:47-05:15:24 UTC)
+== after dry run 3
+gateway containers (llmgw*): 0
+gateway processes: 0
+port 8000: free
+temporary demo copies (/tmp/llmgw-demos.*): 0
+evidence in Windows repo (sha256 of all files): 4bd14cfa192240eb
+evidence in WSL copy     (sha256 of all files): a8439be34a36e676

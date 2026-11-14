@@ -48,9 +48,10 @@ gateway creates, drains and removes them at run time through the Docker Engine A
 number changes with load. The gateway container mounts the Docker socket (sibling containers, not
 Docker-in-Docker), mounts the project at the same absolute path so `models_dir` resolves to a host
 path the daemon can bind-mount, and uses host networking to reach replicas on the `llmgw-net`
-bridge exactly as when it runs on the host. Verified with the real model: `docker compose up`
-started the gateway, which started a replica and a warm spare and served a streamed request;
-`docker compose down` removed every replica container.
+bridge exactly as when it runs on the host. Verified with the real model
+(`report/dry_runs/compose_check.log`): `docker compose up` started the gateway, which started a
+replica and a warm spare and served a streamed request; `docker compose down` removed every
+replica container.
 
 ## 3. Mechanisms
 
@@ -76,8 +77,10 @@ skips them and continues the stream; if they differ the client gets an `llmgw_re
 output restarts. A replica whose container exits, or that never answers `/health`, while still
 loading is removed (container and pool entry) and, if it was not a spare and the pool is below
 `min_replicas`, replaced (a failed spare is left to the warm-pool logic);
-after 3 consecutive load failures replacement stops, so a bad image or model path cannot cause an
-endless start/die loop. A crash of a background task (dispatch loop, health monitor, autoscaler)
+after 3 consecutive load failures the manager stops replacing them. That cap covers only the
+manager's own replacements: in `warm_pool` mode the autoscaler starts a new spare whenever none
+exists, so with a persistently bad image or model path spares would keep being started and
+removed, one at a time (no containers accumulate; this path is not tested). A crash of a background task (dispatch loop, health monitor, autoscaler)
 is logged at ERROR with its traceback.
 
 **Autoscaling and warm pool (Phases 6-7).** Signal = (queued + in_flight) / READY replicas,
@@ -318,7 +321,8 @@ figure (`plots/phase7_prewarm.png`) is superseded by Fig. 1 and kept only with t
   unbounded, with no admission control (no 429/503); streams to replicas have no read timeout, so a
   replica that answers `/health` but stops generating would stall its clients; session histories
   are kept in memory without a bound and can outgrow the 2048-token context per slot, and
-  concurrent turns of one session are not serialised; config validation checks types, the
+  concurrent turns of one session are not serialised; restarts of warm spares that fail while
+  loading are not capped (section 3); config validation checks types, the
   allowed `prewarm` values and `min_replicas <= max_replicas` but not, e.g., that the scale-down threshold is below the
   scale-up threshold.
 - **Results apply only to this machine, model, image and these workloads.**
@@ -351,7 +355,7 @@ On a Linux host with Docker (here WSL2 Ubuntu), from the project root:
 ```
 python3 -m venv ~/llmgw-venv && source ~/llmgw-venv/bin/activate && pip install -r requirements.txt
 bash scripts/check_feasibility.sh        # downloads the model, pulls the image, measures one replica
-python -m pytest tests -v                # 107 tests, stand-in containers (+ one using the llama.cpp image)
+python -m pytest tests -v                # 107 tests, stand-in containers (+ one using the llama.cpp image); recorded: report/dry_runs/test_run.log
 uvicorn gateway.main:app --port 8000     # the gateway with gateway/config.yaml
 docker compose up -d --build             # or: the gateway as a Compose service (compose plugin needed)
 bash scripts/run_all_demos.sh real       # every phase demo with the real model
@@ -363,9 +367,8 @@ python report/aggregate_repeats.py --plots > report/evidence/repeats/SUMMARY.txt
 
 `run_all_demos.sh` runs the unchanged demo scripts in an isolated temporary copy of the project, so
 committed evidence is never overwritten; `run_all_demos.sh real DIR` keeps that run's outputs in DIR.
-The recorded real dry runs took about 14 minutes each (section 10); demo 3 has since been extended
-to the full scale-down lifecycle and now takes about 4 minutes on its own (246-250 s in the
-repeated runs, against 144-163 s in the dry runs), so a full real run takes a few minutes longer.
+A full real run took about 16 minutes on the submitted code (940 s, section 10); the first two
+dry runs took about 14 minutes, before demo 3 was extended to the full scale-down lifecycle.
 The repeated runs were made by running the four scripts of section 4 three times in this way.
 
 ## 10. Final dry runs (Phase 10)
@@ -373,5 +376,6 @@ The repeated runs were made by running the four scripts of section 4 three times
 `scripts/run_all_demos.sh real` was run twice from a clean state on the demo machine, before
 demo 3 was extended. Both runs passed all 8 demos (107 checks each, 0 failures, exit 0, about 14
 minutes each), left no containers, processes or temporary files, and did not change any evidence
-file. The dry runs are rehearsals: their outputs are discarded and are not used as measurements.
+file. A third run on the submitted code (2026-11-11) passed all 8 demos with 115 checks (demo 3 now
+has 21), 0 failures, in 940 s, with the same clean-up and evidence checks. The dry runs are rehearsals: their outputs are discarded and are not used as measurements.
 Details, commands and the console logs: `report/dry_runs/DRY_RUNS.md`.

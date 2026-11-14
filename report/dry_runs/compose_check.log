@@ -1,0 +1,45 @@
+# Docker Compose check on the submitted code (real model): up, one streamed request, down
+# Run: 2026-11-14T04:44:28+00:00 | host: Linux 6.6.87.2-microsoft-standard-WSL2 | Docker Compose version 2.40.3+ds1-0ubuntu1~24.04.1 | docker 29.1.3
+# Before: llmgw containers=0
+$ docker compose config --quiet
+(valid)
+$ docker compose up -d --build
+ gateway  Built
+ Container llmgw-wsl-test-copy-gateway-1  Creating
+ Container llmgw-wsl-test-copy-gateway-1  Created
+ Container llmgw-wsl-test-copy-gateway-1  Starting
+ Container llmgw-wsl-test-copy-gateway-1  Started
+$ docker compose ps
+gateway llmgw-gateway:local Up 5 seconds
+$ docker ps (replica containers created by the gateway through the Engine API)
+llmgw-replica-r2 ghcr.io/ggml-org/llama.cpp:server Up Less than a second (health: starting)
+llmgw-replica-r1 ghcr.io/ggml-org/llama.cpp:server Up 4 seconds (health: starting)
+$ curl -sN http://127.0.0.1:8000/v1/chat/completions ... (max_tokens 12, stream)
+token chunks: 14 | last line: data: [DONE]
+$ docker compose logs gateway (decision lines)
+2026-11-14 04:44:32.773 mono=258.314 INFO gateway [SCALE] replica started replica=r1 container=llmgw-replica-r1 ip=172.18.0.2 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=False
+2026-11-14 04:44:33.796 mono=259.336 INFO gateway [SCALE] signal value=0.00 raw=0.00 queued=0 in_flight=0 ready=0 spares=0 starting=1 total=1
+2026-11-14 04:44:34.797 mono=260.338 INFO gateway [SCALE] signal value=0.00 raw=0.00 queued=0 in_flight=0 ready=0 spares=0 starting=1 total=1
+2026-11-14 04:44:35.448 mono=260.988 INFO gateway [HEALTH] replica ready replica=r1 state=ready load_s=3.03
+2026-11-14 04:44:35.798 mono=261.339 INFO gateway [SCALE] signal value=0.00 raw=0.00 queued=0 in_flight=0 ready=1 spares=0 starting=0 total=1
+2026-11-14 04:44:36.097 mono=261.638 INFO gateway [SCALE] replica started replica=r2 container=llmgw-replica-r2 ip=172.18.0.3 image=ghcr.io/ggml-org/llama.cpp:server cpus=1.0 memory=1g slots=2 spare=True
+2026-11-14 04:44:36.097 mono=261.638 INFO gateway [SCALE] prewarm spare replica=r2 trigger=idle signal=0.00
+2026-11-14 04:44:36.953 mono=262.494 INFO gateway [ROUTE] dispatch req=1 replica=r1 policy=least_busy loads_before=r1:0/2 in_flight=1
+2026-11-14 04:44:37.099 mono=262.640 INFO gateway [SCALE] signal value=0.50 raw=1.00 queued=0 in_flight=1 ready=1 spares=0 starting=1 total=2
+2026-11-14 04:44:37.672 mono=263.213 INFO gateway [HEALTH] replica ready replica=r2 state=warm load_s=1.87
+2026-11-14 04:44:38.102 mono=263.643 INFO gateway [SCALE] signal value=0.75 raw=1.00 queued=0 in_flight=1 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:39.109 mono=264.649 INFO gateway [SCALE] signal value=0.88 raw=1.00 queued=0 in_flight=1 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:40.110 mono=265.651 INFO gateway [SCALE] signal value=0.94 raw=1.00 queued=0 in_flight=1 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:41.114 mono=266.654 INFO gateway [SCALE] signal value=0.97 raw=1.00 queued=0 in_flight=1 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:42.115 mono=267.655 INFO gateway [SCALE] signal value=0.98 raw=1.00 queued=0 in_flight=1 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:42.132 mono=267.672 INFO gateway [ROUTE] complete req=1 replica=r1 tokens=12 attempts=1 ttft_s=2.773 total_s=5.178
+2026-11-14 04:44:43.116 mono=268.656 INFO gateway [SCALE] signal value=0.49 raw=0.00 queued=0 in_flight=0 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:44.117 mono=269.658 INFO gateway [SCALE] signal value=0.25 raw=0.00 queued=0 in_flight=0 ready=1 spares=1 starting=0 total=2
+2026-11-14 04:44:45.124 mono=270.664 INFO gateway [SCALE] signal value=0.12 raw=0.00 queued=0 in_flight=0 ready=1 spares=1 starting=0 total=2
+$ docker compose down
+ Container llmgw-wsl-test-copy-gateway-1  Stopping
+ Container llmgw-wsl-test-copy-gateway-1  Stopped
+ Container llmgw-wsl-test-copy-gateway-1  Removing
+ Container llmgw-wsl-test-copy-gateway-1  Removed
+$ docker ps -a --filter name=llmgw
+# After down: llmgw containers=0
