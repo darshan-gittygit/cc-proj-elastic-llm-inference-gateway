@@ -37,7 +37,7 @@ research prototype, not a production platform.
 
 ---
 
-## 🏗 Architecture
+##  Architecture
 
 ```mermaid
 flowchart TB
@@ -87,13 +87,13 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 
 ---
 
-## ✨ Features
+##  Features
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**⏱ Scheduling**
+** Scheduling**
 - `fcfs`: arrival order
 - `spf_aging`: shortest prompt first, with
   `priority = prompt_tokens − aging_alpha × wait_s`
@@ -103,7 +103,7 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 </td>
 <td width="50%" valign="top">
 
-**🧭 Routing**
+** Routing**
 - `round_robin`: replicas in turn
 - `least_busy`: lowest in-flight / slots
 - `session_affinity`: a conversation stays on one replica;
@@ -114,7 +114,7 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 <tr>
 <td valign="top">
 
-**📦 Replica management**
+** Replica management**
 - Docker containers with `--cpus` and `--memory` limits
 - New replicas get traffic only after `/health` passes
 - Draining: no new requests, wait for in-flight work, then stop
@@ -122,7 +122,7 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 </td>
 <td valign="top">
 
-**🛡 Fault tolerance**
+** Fault tolerance**
 - Health probes; a broken stream also marks a replica dead
 - Dead or frozen replicas are removed and replaced
 - Retries (bounded) restart at the front of the queue
@@ -134,7 +134,7 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 <tr>
 <td valign="top">
 
-**📈 Autoscaling and warm pool**
+** Autoscaling and warm pool**
 - Signal: (queued + in-flight) / ready replicas, smoothed
 - Separate up / down thresholds plus timers against flapping
 - Optional warm pool: loaded spares promoted instantly
@@ -142,7 +142,7 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 </td>
 <td valign="top">
 
-**⚙ Operations**
+** Operations**
 - `POST /admin/reload`: switch scheduler, router, prewarm
   without a restart; invalid files are rejected atomically
 - `loadgen/burst.py`: deterministic burst and session load
@@ -155,7 +155,7 @@ The full design and the ten-phase plan are frozen in [`ARCHITECTURE.md`](ARCHITE
 
 ---
 
-## 📊 Results
+##  Results
 
 Measured with the real model on one machine (WSL2 Ubuntu 24.04, Docker 29.1.3, each replica 1 CPU / 1 GiB).
 
@@ -201,7 +201,7 @@ All plots: [`report/plots/`](report/plots) · raw evidence: [`report/evidence/`]
 
 ---
 
-## 🚀 Quick start
+##  Quick start
 
 **Prerequisites:** Linux (tested on WSL2 Ubuntu 24.04), Docker Engine usable without `sudo`,
 Python 3.10+ (tested 3.12) with `venv`, `curl` and `bc`; the Docker Compose plugin only for the
@@ -271,7 +271,7 @@ on the submitted code), a recorded test run and a Compose check are in
 
 ---
 
-## 🔌 API and configuration
+##  API and configuration
 
 | Endpoint | Behaviour |
 |---|---|
@@ -294,7 +294,7 @@ Environment: `LLMGW_CONFIG` (another config file), `LLMGW_LOG_FILE` (log to a fi
 
 ---
 
-## 🗂 Repository structure
+##  Repository structure
 
 ```text
 gateway/        the gateway: API, queue and dispatch, scheduler, router, replica manager,
@@ -308,11 +308,11 @@ docker-compose.yml  the gateway as a Compose service (replicas stay dynamic)
 ARCHITECTURE.md frozen design, decisions and the ten-phase plan
 ```
 
-📄 [Final report](report/report.md) · 📐 [Architecture](ARCHITECTURE.md) · 📏 [Measurements](report/phase9_measurements.md) · 🧪 [Dry runs](report/dry_runs/DRY_RUNS.md)
+ [Final report](report/report.md) ·  [Architecture](ARCHITECTURE.md) ·  [Measurements](report/phase9_measurements.md) ·  [Dry runs](report/dry_runs/DRY_RUNS.md)
 
 ---
 
-## ⚖ Limitations
+##  Limitations
 
 - **Few runs**: 3 per condition for the repeated experiments, 1 for the rest; no statistical
   significance; requests within a run are not independent repetitions.
